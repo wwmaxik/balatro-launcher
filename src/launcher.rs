@@ -150,13 +150,32 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
     let overrides_lua = smods_dir.join("src").join("overrides.lua");
     if overrides_lua.exists() {
         if let Ok(content) = fs::read_to_string(&overrides_lua) {
-            if content.contains("local on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load") {
-                let patched = content.replace(
-                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load",
-                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tif self.edition and not self.edition.key then\n\t\tfor k, v in pairs(self.edition) do\n\t\t\tif v and G.P_CENTERS['e_' .. k] then\n\t\t\t\tself.edition.key = 'e_' .. k\n\t\t\t\tbreak\n\t\t\tend\n\t\tend\n\tend\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key] and G.P_CENTERS[self.edition.key].on_load",
+            let mut patched = content;
+            if patched.contains("card_init(self, X, Y, W, H, card, center, params)") && !patched.contains("self.ability.card_limit = self.ability.card_limit or 0") {
+                patched = patched.replace(
+                    "card_init(self, X, Y, W, H, card, center, params)",
+                    "card_init(self, X, Y, W, H, card, center, params)\n\tif self.ability then\n\t\tself.ability.card_limit = self.ability.card_limit or 0\n\t\tself.ability.extra_slots_used = self.ability.extra_slots_used or 0\n\tend",
                 );
-                let _ = fs::write(&overrides_lua, patched);
             }
+            if patched.contains("local on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load") {
+                patched = patched.replace(
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load",
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tif self.ability then\n\t\tself.ability.card_limit = self.ability.card_limit or 0\n\t\tself.ability.extra_slots_used = self.ability.extra_slots_used or 0\n\tend\n\tif self.edition and not self.edition.key then\n\t\tfor k, v in pairs(self.edition) do\n\t\t\tif v and G.P_CENTERS['e_' .. k] then\n\t\t\t\tself.edition.key = 'e_' .. k\n\t\t\t\tbreak\n\t\t\tend\n\t\tend\n\tend\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key] and G.P_CENTERS[self.edition.key].on_load",
+                );
+            }
+            if patched.contains("self.ability.card_limit = self.ability.card_limit + (center.config.card_limit or 0)") {
+                patched = patched.replace(
+                    "self.ability.card_limit = self.ability.card_limit + (center.config.card_limit or 0)",
+                    "self.ability.card_limit = (self.ability.card_limit or 0) + (center.config.card_limit or 0)",
+                );
+            }
+            if patched.contains("self.ability.extra_slots_used = self.ability.extra_slots_used + (center.config.extra_slots_used or 0)") {
+                patched = patched.replace(
+                    "self.ability.extra_slots_used = self.ability.extra_slots_used + (center.config.extra_slots_used or 0)",
+                    "self.ability.extra_slots_used = (self.ability.extra_slots_used or 0) + (center.config.extra_slots_used or 0)",
+                );
+            }
+            let _ = fs::write(&overrides_lua, patched);
         }
     }
     let hand_limit_toml = smods_dir.join("lovely").join("hand_limit.toml");
@@ -217,10 +236,11 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
     let card_limit_toml = smods_dir.join("lovely").join("card_limit.toml");
     if card_limit_toml.exists() {
         if let Ok(content) = fs::read_to_string(&card_limit_toml) {
-            if content.contains("self.config = setmetatable(cardAreaTable.config, {")
-                && !content.contains("if not cardAreaTable.config.card_limits then")
+            let mut patched = content;
+            if patched.contains("self.config = setmetatable(cardAreaTable.config, {")
+                && !patched.contains("if not cardAreaTable.config.card_limits then")
             {
-                let patched = content
+                patched = patched
                     .replace(
                         "payload = '''\nself.config = setmetatable(cardAreaTable.config, {",
                         "payload = '''\nif not cardAreaTable.config.card_limits then\n    local clim = cardAreaTable.config.card_limit or 8\n    cardAreaTable.config.card_limits = {\n        base = clim,\n        total_slots = clim,\n        mod = 0,\n        extra_slots = 0,\n        extra_slots_used = 0,\n    }\nend\nself.config = setmetatable(cardAreaTable.config, {",
@@ -229,8 +249,14 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
                         "if self.config.type == 'hand' and cardAreaTable.config.card_limits.total_slots ~= (cardAreaTable.config.card_limits.base or 0) + (cardAreaTable.config.card_limits.mod or 0) + (cardAreaTable.config.card_limits.extra_slots or 0) then",
                         "if self.config.type == 'hand' and cardAreaTable.config.card_limits and cardAreaTable.config.card_limits.total_slots and cardAreaTable.config.card_limits.total_slots ~= (cardAreaTable.config.card_limits.base or 0) + (cardAreaTable.config.card_limits.mod or 0) + (cardAreaTable.config.card_limits.extra_slots or 0) then",
                     );
-                let _ = fs::write(&card_limit_toml, patched);
             }
+            if patched.contains("local mod = unfixed and (card.ability.card_limit - card.ability.extra_slots_used) or 0") {
+                patched = patched.replace(
+                    "local mod = unfixed and (card.ability.card_limit - card.ability.extra_slots_used) or 0",
+                    "local mod = (unfixed and card and card.ability) and ((card.ability.card_limit or 0) - (card.ability.extra_slots_used or 0)) or 0",
+                );
+            }
+            let _ = fs::write(&card_limit_toml, patched);
         }
     }
     let game_obj_lua = smods_dir.join("src").join("game_object.lua");
