@@ -1,8 +1,19 @@
 mod config;
+mod installer;
 mod launcher;
 mod mods;
 mod scanner;
+mod ui;
 
-fn main() {
-    println!("Balatro Launcher Backend initialized.");
+use ui::LauncherApp;
+
+fn main() -> iced::Result {
+    iced::application(
+        LauncherApp::title,
+        LauncherApp::update,
+        LauncherApp::view,
+    )
+    .window_size((850.0, 620.0))
+    .theme(|_| iced::Theme::Dark)
+    .run_with(LauncherApp::new)
 }
