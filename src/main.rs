@@ -9,6 +9,7 @@ mod ui;
 use ui::LauncherApp;
 
 fn main() -> iced::Result {
+    launcher::ensure_desktop_integration();
     iced::application(
         LauncherApp::title,
         LauncherApp::update,

@@ -21,20 +21,69 @@ pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
         }
     }
 
-    // If game_target is a standalone fused binary (like ~/Balatro/balatro), run it directly!
-    // Otherwise run via love <path>.
-    let is_direct_binary = config.game_target.is_file()
-        && config
+    // Also ensure <game_dir>/Mods is linked to mods_dir so Lovely finds it regardless of identity
+    #[cfg(unix)]
+    if let (Some(parent), Some(ref mods_dir)) = (config.game_target.parent(), &config.mods_dir) {
+        let game_mods_dir = parent.join("Mods");
+        if !game_mods_dir.exists() {
+            let _ = std::os::unix::fs::symlink(mods_dir, &game_mods_dir);
+        }
+    }
+
+    // If game_target is Balatro.exe or Balatro.love, try to auto-fuse to standalone "balatro" binary
+    let effective_target = if config.game_target.is_file() {
+        let is_exe = config
             .game_target
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.eq_ignore_ascii_case("Balatro.exe") || n.eq_ignore_ascii_case("balatro.exe"))
+            .unwrap_or(false);
+
+        if is_exe {
+            let candidate_bin = config.game_target.with_file_name("balatro");
+            if candidate_bin.is_file() {
+                candidate_bin
+            } else if let (Ok(love_bytes), Ok(exe_bytes)) =
+                (fs::read(&config.love_binary), fs::read(&config.game_target))
+            {
+                let mut fused = love_bytes;
+                fused.extend_from_slice(&exe_bytes);
+                if fs::write(&candidate_bin, fused).is_ok() {
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = fs::set_permissions(
+                            &candidate_bin,
+                            fs::Permissions::from_mode(0o755),
+                        );
+                    }
+                    candidate_bin
+                } else {
+                    config.game_target.clone()
+                }
+            } else {
+                config.game_target.clone()
+            }
+        } else {
+            config.game_target.clone()
+        }
+    } else {
+        config.game_target.clone()
+    };
+
+    // If effective_target is a standalone fused binary (like ~/Balatro/balatro), run it directly!
+    // Otherwise run via love <path>.
+    let is_direct_binary = effective_target.is_file()
+        && effective_target
             .file_name()
             .map(|n| n == "balatro" || n == "Balatro")
             .unwrap_or(false);
 
     let mut cmd = if is_direct_binary {
-        Command::new(&config.game_target)
+        Command::new(&effective_target)
     } else {
         let mut c = Command::new(&config.love_binary);
-        c.arg(&config.game_target);
+        c.arg(&effective_target);
         c
     };
 
@@ -48,7 +97,7 @@ pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
     }
 
     // Set working directory to game parent dir if possible
-    if let Some(parent) = config.game_target.parent() {
+    if let Some(parent) = effective_target.parent() {
         cmd.current_dir(parent);
     }
 
@@ -63,6 +112,7 @@ pub fn ensure_linux_environment() {
         let lower = love_dir.join("balatro");
         let upper = love_dir.join("Balatro");
         let standalone = data_dir.join("balatro");
+        let standalone_upper = data_dir.join("Balatro");
 
         let target = if lower.exists() {
             lower.clone()
@@ -82,7 +132,11 @@ pub fn ensure_linux_environment() {
         if !standalone.exists() && target != standalone {
             let _ = std::os::unix::fs::symlink(&target, &standalone);
         }
+        if !standalone_upper.exists() && target != standalone_upper {
+            let _ = std::os::unix::fs::symlink(&target, &standalone_upper);
+        }
 
+        // Link love-11/Mods -> target/Mods for Lovely default search path
         let love_11_dir = data_dir.join("love-11");
         let _ = fs::create_dir_all(&love_11_dir);
         let love_11_mods = love_11_dir.join("Mods");
@@ -95,11 +149,110 @@ pub fn ensure_linux_environment() {
             let _ = fs::remove_dir_all(&love_11_mods);
             let _ = std::os::unix::fs::symlink(&mods_dir, &love_11_mods);
         }
+
+        // Link love/Mods -> target/Mods
+        let love_mods = love_dir.join("Mods");
+        if love_mods.is_symlink() {
+            // Already symlinked
+        } else if !love_mods.exists() {
+            let _ = std::os::unix::fs::symlink(&mods_dir, &love_mods);
+        } else if !love_mods.join("Steamodded").exists() {
+            let _ = fs::remove_dir_all(&love_mods);
+            let _ = std::os::unix::fs::symlink(&mods_dir, &love_mods);
+        }
     }
 }
 
 #[cfg(not(unix))]
 pub fn ensure_linux_environment() {}
+
+pub const APP_ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+
+#[cfg(unix)]
+pub fn ensure_desktop_integration() {
+    let Ok(current_exe) = std::env::current_exe() else {
+        return;
+    };
+
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return,
+    };
+
+    let local_bin_dir = home.join(".local").join("bin");
+    let target_bin = local_bin_dir.join("balatro-launcher");
+
+    let exec_path = if current_exe == target_bin || current_exe.starts_with("/usr") {
+        current_exe.clone()
+    } else {
+        let _ = fs::create_dir_all(&local_bin_dir);
+        let should_copy = if !target_bin.exists() {
+            true
+        } else {
+            let cur_len = fs::metadata(&current_exe).map(|m| m.len()).unwrap_or(0);
+            let tgt_len = fs::metadata(&target_bin).map(|m| m.len()).unwrap_or(0);
+            cur_len != tgt_len
+        };
+
+        if should_copy {
+            let _ = fs::copy(&current_exe, &target_bin);
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&target_bin, fs::Permissions::from_mode(0o755));
+        }
+
+        if target_bin.exists() {
+            target_bin
+        } else {
+            current_exe.clone()
+        }
+    };
+
+    let icon_dir = home
+        .join(".local")
+        .join("share")
+        .join("icons")
+        .join("hicolor")
+        .join("256x256")
+        .join("apps");
+    let _ = fs::create_dir_all(&icon_dir);
+    let icon_path = icon_dir.join("balatro-launcher.png");
+    if !icon_path.exists() {
+        let _ = fs::write(&icon_path, APP_ICON_PNG);
+    }
+
+    let desktop_content = format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=Balatro Launcher\n\
+         GenericName=Game Launcher\n\
+         Comment=Launcher and mod manager for Balatro\n\
+         Exec={}\n\
+         Icon={}\n\
+         Terminal=false\n\
+         Categories=Game;CardGame;\n\
+         Keywords=balatro;cards;roguelike;launcher;mods;\n\
+         StartupNotify=true\n",
+        exec_path.display(),
+        icon_path.display()
+    );
+
+    let apps_dir = home.join(".local").join("share").join("applications");
+    let _ = fs::create_dir_all(&apps_dir);
+    let app_desktop = apps_dir.join("balatro-launcher.desktop");
+    let _ = fs::write(&app_desktop, &desktop_content);
+
+    if let Some(desktop_dir) = dirs::desktop_dir() {
+        if desktop_dir.is_dir() {
+            let desktop_file = desktop_dir.join("balatro-launcher.desktop");
+            let _ = fs::write(&desktop_file, &desktop_content);
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&desktop_file, fs::Permissions::from_mode(0o755));
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn ensure_desktop_integration() {}
 
 /// Recursively scans mods directory and updates any `nativefs.lua` files
 /// to be Linux-compatible (POSIX stat/opendir fallback, no undefined symbol PHYSFS crash,
@@ -482,9 +635,17 @@ pub fn find_lovely_lib(game_dir: Option<&Path>) -> Option<PathBuf> {
     }
 
     if let Some(data_dir) = dirs::data_dir() {
-        let global_lovely = data_dir.join("love").join("Balatro").join("liblovely.so");
-        if global_lovely.exists() {
-            return Some(global_lovely);
+        let candidates = [
+            data_dir.join("balatro").join("liblovely.so"),
+            data_dir.join("Balatro").join("liblovely.so"),
+            data_dir.join("love").join("Balatro").join("liblovely.so"),
+            data_dir.join("love").join("balatro").join("liblovely.so"),
+            data_dir.join("love-11").join("liblovely.so"),
+        ];
+        for candidate in candidates {
+            if candidate.exists() {
+                return Some(candidate);
+            }
         }
     }
 

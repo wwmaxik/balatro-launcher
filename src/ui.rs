@@ -61,6 +61,7 @@ pub enum Message {
     LaunchGame,
     InstallLovely,
     LovelyInstallResult(Result<PathBuf, String>),
+    LovelyAutoInstalledAndLaunch(Result<PathBuf, String>),
     GamePathInputChanged(String),
     SaveGamePath,
     // Catalog & Management
@@ -95,6 +96,7 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new() -> (Self, Task<Message>) {
+        crate::launcher::ensure_desktop_integration();
         crate::launcher::ensure_linux_environment();
         let config = load_config();
         let love_binary = config.love_binary.clone().or_else(find_love_binary);
@@ -240,13 +242,32 @@ impl LauncherApp {
             }
             Message::LaunchGame => {
                 let Some(ref love_bin) = self.love_binary else {
-                    self.status_message = "LÖVE не найден в системе!".to_string();
+                    self.status_message = "LÖVE не найден в системе (sudo apt install love)!".to_string();
                     return Task::none();
                 };
                 let Some(ref game_target) = self.game_path else {
-                    self.status_message = "Путь к Balatro не выбран!".to_string();
+                    self.status_message = "Путь к Balatro не выбран! Укажите путь в Настройках.".to_string();
                     return Task::none();
                 };
+
+                // If modded mode is requested but Lovely is not installed, install it automatically!
+                if self.config.modded_mode && self.lovely_lib.is_none() {
+                    self.is_installing_lovely = true;
+                    self.status_message = "Автоматическая загрузка и установка Lovely Injector...".to_string();
+                    let target_dir = self
+                        .game_path
+                        .as_deref()
+                        .and_then(|p| p.parent())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or_else(|| self.mods_dir.parent().unwrap().to_path_buf());
+
+                    return Task::perform(
+                        async move {
+                            download_and_install_lovely(&target_dir, |_status| ()).await
+                        },
+                        Message::LovelyAutoInstalledAndLaunch,
+                    );
+                }
 
                 let config = LaunchConfig {
                     love_binary: love_bin.clone(),
@@ -269,6 +290,20 @@ impl LauncherApp {
                     }
                     Err(e) => {
                         self.status_message = format!("Ошибка запуска: {e}");
+                    }
+                }
+                Task::none()
+            }
+            Message::LovelyAutoInstalledAndLaunch(res) => {
+                self.is_installing_lovely = false;
+                match res {
+                    Ok(path) => {
+                        self.lovely_lib = Some(path);
+                        self.status_message = "Lovely установлен! Запуск Balatro...".to_string();
+                        return self.update(Message::LaunchGame);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Ошибка установки Lovely: {e}");
                     }
                 }
                 Task::none()

@@ -2,7 +2,15 @@ use std::path::{Path, PathBuf};
 use which::which;
 
 pub fn find_love_binary() -> Option<PathBuf> {
-    which("love").ok()
+    which("love").ok().or_else(|| {
+        let candidates = [
+            PathBuf::from("/usr/bin/love"),
+            PathBuf::from("/usr/games/love"),
+            PathBuf::from("/usr/local/bin/love"),
+            PathBuf::from("/app/bin/love"),
+        ];
+        candidates.into_iter().find(|p| p.is_file())
+    })
 }
 
 pub fn get_default_mods_dir() -> PathBuf {
@@ -28,9 +36,18 @@ pub fn find_game_executable(custom_path: Option<&Path>) -> Option<PathBuf> {
         home.join("Balatro").join("balatro"),
         home.join("Balatro").join("Balatro.love"),
         home.join("Balatro").join("Balatro.exe"),
+        home.join(".steam/steam/steamapps/common/Balatro/balatro"),
         home.join(".steam/steam/steamapps/common/Balatro/Balatro.exe"),
+        home.join(".local/share/Steam/steamapps/common/Balatro/balatro"),
         home.join(".local/share/Steam/steamapps/common/Balatro/Balatro.exe"),
+        home.join(".steam/root/steamapps/common/Balatro/balatro"),
         home.join(".steam/root/steamapps/common/Balatro/Balatro.exe"),
+        home.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/Balatro/balatro"),
+        home.join(".var/app/com.valvesoftware.Steam/data/Steam/steamapps/common/Balatro/Balatro.exe"),
+        home.join("Games/Balatro/balatro"),
+        home.join("Games/Balatro/Balatro.exe"),
+        home.join("games/Balatro/balatro"),
+        home.join("games/Balatro/Balatro.exe"),
     ];
 
     for candidate in candidates {
