@@ -253,42 +253,7 @@ impl LauncherApp {
     pub fn view(&self) -> Element<'_, Message> {
         let pulse = (self.animation_phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
 
-        // =========================================================================
-        // 1. MACOS UNIFIED TITLEBAR / WINDOW CONTROLS (Traffic lights + Title)
-        // =========================================================================
-        let traffic_lights = row![
-            // Close (Red)
-            container(text("").size(1))
-                .width(Length::Fixed(12.0))
-                .height(Length::Fixed(12.0))
-                .style(|_| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb(1.0, 0.36, 0.33))),
-                    border: Border { radius: 6.0.into(), ..Default::default() },
-                    ..Default::default()
-                }),
-            // Minimize (Yellow)
-            container(text("").size(1))
-                .width(Length::Fixed(12.0))
-                .height(Length::Fixed(12.0))
-                .style(|_| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb(1.0, 0.75, 0.18))),
-                    border: Border { radius: 6.0.into(), ..Default::default() },
-                    ..Default::default()
-                }),
-            // Zoom (Green)
-            container(text("").size(1))
-                .width(Length::Fixed(12.0))
-                .height(Length::Fixed(12.0))
-                .style(|_| container::Style {
-                    background: Some(iced::Background::Color(Color::from_rgb(0.16, 0.79, 0.28))),
-                    border: Border { radius: 6.0.into(), ..Default::default() },
-                    ..Default::default()
-                }),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center);
-
-        // Sidebar Brand header integrated below traffic lights
+        // Sidebar Brand header
         let brand_icon = svg(svg::Handle::from_memory(ICON_CARD_SVG))
             .width(18)
             .height(18)
@@ -307,12 +272,7 @@ impl LauncherApp {
         .spacing(10)
         .align_y(Alignment::Center);
 
-        let sidebar_header = column![
-            traffic_lights,
-            app_brand,
-        ]
-        .spacing(16)
-        .padding([14, 18]);
+        let sidebar_header = container(app_brand).padding([16, 18]);
 
         // =========================================================================
         // 2. MACOS HIG SIDEBAR ITEMS (Clean rounded selection pills)
