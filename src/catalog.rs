@@ -325,6 +325,8 @@ pub async fn download_and_install_mod(
         }
     }
 
+    crate::launcher::ensure_linux_nativefs_compatibility(mods_dir);
+
     on_status(format!("Мод {} успешно установлен!", target_folder_name));
     Ok(target_dir)
 }

@@ -1,5 +1,8 @@
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+
+pub const COMPAT_NATIVEFS: &str = include_str!("../assets/nativefs_linux_compat.lua");
 
 #[derive(Debug, Clone)]
 pub struct LaunchConfig {
@@ -7,9 +10,17 @@ pub struct LaunchConfig {
     pub game_target: PathBuf,
     pub modded: bool,
     pub lovely_lib_path: Option<PathBuf>,
+    pub mods_dir: Option<PathBuf>,
 }
 
 pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
+    // If launched in modded mode, ensure Linux nativefs compatibility across all mods
+    if config.modded {
+        if let Some(ref mods_dir) = config.mods_dir {
+            ensure_linux_nativefs_compatibility(mods_dir);
+        }
+    }
+
     // If game_target is a standalone fused binary (like ~/Balatro/balatro), run it directly!
     // Otherwise run via love <path>.
     let is_direct_binary = config.game_target.is_file()
@@ -44,6 +55,44 @@ pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
     cmd.spawn()
 }
 
+/// Recursively scans mods directory and updates any `nativefs.lua` files
+/// to be Linux-compatible (POSIX stat/opendir fallback, no undefined symbol PHYSFS crash,
+/// guarded cdef definitions).
+pub fn ensure_linux_nativefs_compatibility(mods_dir: &Path) {
+    if !mods_dir.exists() {
+        return;
+    }
+    walk_and_patch_nativefs(mods_dir);
+}
+
+fn walk_and_patch_nativefs(dir: &Path) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                if name != ".git" && name != "dump" && name != "game-dump" && name != "lsp_def" {
+                    walk_and_patch_nativefs(&path);
+                }
+            } else if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if file_name.eq_ignore_ascii_case("nativefs.lua") {
+                    let needs_patch = match fs::read_to_string(&path) {
+                        Ok(content) => {
+                            !content.contains("posix_getInfo")
+                                || !content.contains("pcall(ffi.cdef")
+                                || content.contains("local mountPoint = _ptr(loveC.PHYSFS_getMountPoint(dir))")
+                        }
+                        Err(_) => true,
+                    };
+                    if needs_patch {
+                        let _ = fs::write(&path, COMPAT_NATIVEFS);
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn find_lovely_lib(game_dir: Option<&Path>) -> Option<PathBuf> {
     if let Some(dir) = game_dir {
         let local_lovely = dir.join("liblovely.so");
@@ -73,7 +122,27 @@ mod tests {
             game_target: PathBuf::from("/tmp/Balatro.love"),
             modded: false,
             lovely_lib_path: None,
+            mods_dir: None,
         };
         assert_eq!(config.modded, false);
+    }
+
+    #[test]
+    fn test_nativefs_patching() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mod_dir = temp_dir.path().join("TestMod");
+        fs::create_dir_all(&mod_dir).unwrap();
+        let dummy_nativefs = mod_dir.join("nativefs.lua");
+        fs::write(
+            &dummy_nativefs,
+            "local mountPoint = _ptr(loveC.PHYSFS_getMountPoint(dir))\n",
+        )
+        .unwrap();
+
+        ensure_linux_nativefs_compatibility(temp_dir.path());
+
+        let patched_content = fs::read_to_string(&dummy_nativefs).unwrap();
+        assert!(patched_content.contains("posix_getInfo"));
+        assert!(patched_content.contains("pcall(ffi.cdef"));
     }
 }

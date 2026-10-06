@@ -252,6 +252,7 @@ impl LauncherApp {
                     game_target: game_target.clone(),
                     modded: self.config.modded_mode,
                     lovely_lib_path: self.lovely_lib.clone(),
+                    mods_dir: Some(self.mods_dir.clone()),
                 };
 
                 match launch_game(&config) {
