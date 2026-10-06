@@ -63,10 +63,10 @@ pub fn ensure_linux_nativefs_compatibility(mods_dir: &Path) {
         return;
     }
     walk_and_patch_nativefs(mods_dir);
-    ensure_steamodded_hand_limit_compatibility(mods_dir);
+    ensure_steamodded_compatibility(mods_dir);
 }
 
-fn ensure_steamodded_hand_limit_compatibility(mods_dir: &Path) {
+fn ensure_steamodded_compatibility(mods_dir: &Path) {
     let smods_dir = mods_dir.join("Steamodded");
     let utils_lua = smods_dir.join("src").join("utils.lua");
     if utils_lua.exists() {
@@ -91,6 +91,30 @@ fn ensure_steamodded_hand_limit_compatibility(mods_dir: &Path) {
                     "payload = '''\nif self.GAME and self.GAME.starting_params then\n    self.GAME.starting_params.play_limit = self.GAME.starting_params.play_limit or 5\n    self.GAME.starting_params.discard_limit = self.GAME.starting_params.discard_limit or 5\nend\nSMODS.update_hand_limit_text(true, true)",
                 );
                 let _ = fs::write(&hand_limit_toml, patched);
+            }
+        }
+    }
+    let scoring_calc_toml = smods_dir.join("lovely").join("scoring_calculation.toml");
+    if scoring_calc_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&scoring_calc_toml) {
+            if content.contains("if saveTable then\n    self.GAME.current_scoring_calculation = SMODS.Scoring_Calculations[saveTable.SCORING_CALC.key]") {
+                let patched = content.replace(
+                    "if saveTable then\n    self.GAME.current_scoring_calculation = SMODS.Scoring_Calculations[saveTable.SCORING_CALC.key]",
+                    "if saveTable and saveTable.SCORING_CALC and saveTable.SCORING_CALC.key and SMODS.Scoring_Calculations[saveTable.SCORING_CALC.key] then\n    self.GAME.current_scoring_calculation = SMODS.Scoring_Calculations[saveTable.SCORING_CALC.key]"
+                );
+                let _ = fs::write(&scoring_calc_toml, patched);
+            }
+        }
+    }
+    let better_calc_toml = smods_dir.join("lovely").join("better_calc.toml");
+    if better_calc_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&better_calc_toml) {
+            if content.contains("if saveTable.SMODS then\n        SMODS.last_hand = {scoring_hand = {}, full_hand = {}, scoring_name = saveTable.SMODS.last_hand.scoring_name}") {
+                let patched = content.replace(
+                    "if saveTable.SMODS then\n        SMODS.last_hand = {scoring_hand = {}, full_hand = {}, scoring_name = saveTable.SMODS.last_hand.scoring_name}",
+                    "if saveTable.SMODS and saveTable.SMODS.last_hand then\n        SMODS.last_hand = {scoring_hand = {}, full_hand = {}, scoring_name = saveTable.SMODS.last_hand.scoring_name}"
+                );
+                let _ = fs::write(&better_calc_toml, patched);
             }
         }
     }
