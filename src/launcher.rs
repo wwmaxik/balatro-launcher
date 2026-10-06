@@ -405,6 +405,31 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
             let _ = fs::write(&game_obj_lua, patched);
         }
     }
+    let poker_hand_toml = smods_dir.join("lovely").join("poker_hand.toml");
+    if poker_hand_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&poker_hand_toml) {
+            if content.contains("payload = '''G.GAME.hands[text].played_this_ante = G.GAME.hands[text].played_this_ante + 1'''") {
+                let patched = content.replace(
+                    "payload = '''G.GAME.hands[text].played_this_ante = G.GAME.hands[text].played_this_ante + 1'''",
+                    "payload = '''G.GAME.hands[text].played_this_ante = (G.GAME.hands[text].played_this_ante or 0) + 1'''",
+                );
+                let _ = fs::write(&poker_hand_toml, patched);
+            }
+        }
+    }
+    let fixes_toml = smods_dir.join("lovely").join("fixes.toml");
+    if fixes_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&fixes_toml) {
+            let mut patched = content;
+            if patched.contains("payload = \"local cfg = (card and card.ability) or _c['config']\"") {
+                patched = patched.replace(
+                    "payload = \"local cfg = (card and card.ability) or _c['config']\"",
+                    "payload = \"local cfg = (card and card.ability and _c['config'] and SMODS.merge_defaults(copy_table(card.ability), _c['config'])) or (card and card.ability) or _c['config']\"",
+                );
+            }
+            let _ = fs::write(&fixes_toml, patched);
+        }
+    }
 }
 
 fn walk_and_patch_nativefs(dir: &Path) {
