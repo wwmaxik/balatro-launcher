@@ -82,6 +82,19 @@ pub fn ensure_linux_environment() {
         if !standalone.exists() && target != standalone {
             let _ = std::os::unix::fs::symlink(&target, &standalone);
         }
+
+        let love_11_dir = data_dir.join("love-11");
+        let _ = fs::create_dir_all(&love_11_dir);
+        let love_11_mods = love_11_dir.join("Mods");
+        if love_11_mods.is_symlink() {
+            // Already symlinked
+        } else if !love_11_mods.exists() {
+            let _ = std::os::unix::fs::symlink(&mods_dir, &love_11_mods);
+        } else if !love_11_mods.join("Steamodded").exists() {
+            // If lovely auto-created ~/.local/share/love-11/Mods without actual mods, replace it
+            let _ = fs::remove_dir_all(&love_11_mods);
+            let _ = std::os::unix::fs::symlink(&mods_dir, &love_11_mods);
+        }
     }
 }
 
