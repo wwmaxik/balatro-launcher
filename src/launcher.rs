@@ -118,6 +118,25 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
             }
         }
     }
+    let card_limit_toml = smods_dir.join("lovely").join("card_limit.toml");
+    if card_limit_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&card_limit_toml) {
+            if content.contains("self.config = setmetatable(cardAreaTable.config, {")
+                && !content.contains("if not cardAreaTable.config.card_limits then")
+            {
+                let patched = content
+                    .replace(
+                        "payload = '''\nself.config = setmetatable(cardAreaTable.config, {",
+                        "payload = '''\nif not cardAreaTable.config.card_limits then\n    local clim = cardAreaTable.config.card_limit or 8\n    cardAreaTable.config.card_limits = {\n        base = clim,\n        total_slots = clim,\n        mod = 0,\n        extra_slots = 0,\n        extra_slots_used = 0,\n    }\nend\nself.config = setmetatable(cardAreaTable.config, {",
+                    )
+                    .replace(
+                        "if self.config.type == 'hand' and cardAreaTable.config.card_limits.total_slots ~= (cardAreaTable.config.card_limits.base or 0) + (cardAreaTable.config.card_limits.mod or 0) + (cardAreaTable.config.card_limits.extra_slots or 0) then",
+                        "if self.config.type == 'hand' and cardAreaTable.config.card_limits and cardAreaTable.config.card_limits.total_slots and cardAreaTable.config.card_limits.total_slots ~= (cardAreaTable.config.card_limits.base or 0) + (cardAreaTable.config.card_limits.mod or 0) + (cardAreaTable.config.card_limits.extra_slots or 0) then",
+                    );
+                let _ = fs::write(&card_limit_toml, patched);
+            }
+        }
+    }
 }
 
 fn walk_and_patch_nativefs(dir: &Path) {
