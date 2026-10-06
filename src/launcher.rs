@@ -178,6 +178,18 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
             }
         }
     }
+    let game_obj_lua = smods_dir.join("src").join("game_object.lua");
+    if game_obj_lua.exists() {
+        if let Ok(content) = fs::read_to_string(&game_obj_lua) {
+            if content.contains("math.min(cfg.choose + (G.GAME.modifiers.booster_choice_mod or 0)") {
+                let patched = content.replace(
+                    "local cfg = (card and card.ability) or self.config\n        return {\n            vars = { math.min(cfg.choose + (G.GAME.modifiers.booster_choice_mod or 0), math.max(1, cfg.extra + (G.GAME.modifiers.booster_size_mod or 0))), math.max(1, cfg.extra + (G.GAME.modifiers.booster_size_mod or 0)) },",
+                    "local cfg = (card and card.ability) or self.config or {}\n        local choose = cfg.choose or (self.config and self.config.choose) or 1\n        local extra = cfg.extra or (self.config and self.config.extra) or 3\n        local choice_mod = (G.GAME and G.GAME.modifiers and G.GAME.modifiers.booster_choice_mod) or 0\n        local size_mod = (G.GAME and G.GAME.modifiers and G.GAME.modifiers.booster_size_mod) or 0\n        local total_size = math.max(1, extra + size_mod)\n        local total_choose = math.min(choose + choice_mod, total_size)\n        return {\n            vars = { total_choose, total_size },",
+                );
+                let _ = fs::write(&game_obj_lua, patched);
+            }
+        }
+    }
 }
 
 fn walk_and_patch_nativefs(dir: &Path) {
