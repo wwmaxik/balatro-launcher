@@ -42,7 +42,27 @@ pub struct CatalogMod {
     pub badge: Option<String>,
 }
 
+const EMBEDDED_MODS_JSON: &str = include_str!("../assets/mods_index.json");
+
 pub fn get_curated_catalog() -> Vec<CatalogMod> {
+    let mut all_mods = get_featured_mods();
+
+    if let Ok(community_mods) = serde_json::from_str::<Vec<CatalogMod>>(EMBEDDED_MODS_JSON) {
+        for cmod in community_mods {
+            let already = all_mods.iter().any(|m| {
+                m.folder_name.to_lowercase() == cmod.folder_name.to_lowercase()
+                    || m.name.to_lowercase() == cmod.name.to_lowercase()
+            });
+            if !already {
+                all_mods.push(cmod);
+            }
+        }
+    }
+
+    all_mods
+}
+
+pub fn get_featured_mods() -> Vec<CatalogMod> {
     vec![
         CatalogMod {
             id: "steamodded".to_string(),
@@ -340,7 +360,7 @@ mod tests {
     #[test]
     fn test_curated_catalog() {
         let catalog = get_curated_catalog();
-        assert!(!catalog.is_empty());
+        assert!(catalog.len() >= 400, "Should load 400+ mods from community index, got {}", catalog.len());
         let smods = catalog.iter().find(|m| m.id == "steamodded");
         assert!(smods.is_some());
         assert_eq!(smods.unwrap().folder_name, "Steamodded");

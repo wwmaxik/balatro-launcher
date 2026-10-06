@@ -1003,11 +1003,29 @@ impl LauncherApp {
                 let filtered_mods: Vec<_> = self.catalog_mods.iter().filter(|m| {
                     let match_cat = match self.catalog_category {
                         ModCategory::All => true,
-                        ModCategory::Core => m.category.contains("Ядро"),
-                        ModCategory::Content => m.category.contains("Контент"),
-                        ModCategory::Jokers => m.category.contains("Джокеры"),
-                        ModCategory::QoL => m.category.contains("QoL"),
-                        ModCategory::Multiplayer => m.category.contains("Мультиплеер"),
+                        ModCategory::Core => {
+                            m.category.contains("Ядро")
+                                || m.category.to_lowercase().contains("api")
+                                || m.category.to_lowercase().contains("technical")
+                        }
+                        ModCategory::Content => {
+                            m.category.contains("Контент")
+                                || m.category.to_lowercase().contains("content")
+                                || m.category.to_lowercase().contains("deck")
+                        }
+                        ModCategory::Jokers => {
+                            m.category.contains("Джокер")
+                                || m.category.to_lowercase().contains("joker")
+                        }
+                        ModCategory::QoL => {
+                            m.category.contains("QoL")
+                                || m.category.to_lowercase().contains("quality of life")
+                                || m.category.contains("Утилиты")
+                        }
+                        ModCategory::Multiplayer => {
+                            m.category.contains("Мультиплеер")
+                                || m.name.to_lowercase().contains("multiplayer")
+                        }
                     };
 
                     if !match_cat {
