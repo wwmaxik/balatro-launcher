@@ -7,6 +7,9 @@ use iced::{
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::catalog::{
+    delete_mod, download_and_install_mod, get_curated_catalog, CatalogMod, ModCategory,
+};
 use crate::config::{load_config, save_config, AppConfig};
 use crate::installer::download_and_install_lovely;
 use crate::launcher::{find_lovely_lib, launch_game, LaunchConfig};
@@ -21,6 +24,7 @@ const ICON_REFRESH_SVG: &[u8] = include_bytes!("../assets/icons/refresh.svg");
 const ICON_FOLDER_SVG: &[u8] = include_bytes!("../assets/icons/folder.svg");
 const ICON_PLAY_SVG: &[u8] = include_bytes!("../assets/icons/play.svg");
 const ICON_DOWNLOAD_SVG: &[u8] = include_bytes!("../assets/icons/download.svg");
+const ICON_TRASH_SVG: &[u8] = include_bytes!("../assets/icons/trash.svg");
 
 // =========================================================================
 // APPLE HUMAN INTERFACE GUIDELINES DESIGN SYSTEM (macOS Sequoia Dark / Pro)
@@ -43,6 +47,7 @@ pub const COLOR_LABEL_TERTIARY: Color = Color::from_rgb(0.48, 0.50, 0.54); // Ca
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationTab {
     Mods,
+    Catalog,
     Settings,
 }
 
@@ -58,6 +63,14 @@ pub enum Message {
     LovelyInstallResult(Result<PathBuf, String>),
     GamePathInputChanged(String),
     SaveGamePath,
+    // Catalog & Management
+    InstallCatalogMod(String),
+    CatalogInstallResult(Result<PathBuf, String>),
+    DeleteInstalledMod(String),
+    CatalogSearchChanged(String),
+    CatalogCategorySelected(ModCategory),
+    CustomModUrlChanged(String),
+    InstallFromCustomUrl,
 }
 
 pub struct LauncherApp {
@@ -72,6 +85,12 @@ pub struct LauncherApp {
     pub status_message: String,
     pub is_installing_lovely: bool,
     pub animation_phase: f32,
+    // Catalog state
+    pub catalog_mods: Vec<CatalogMod>,
+    pub catalog_search: String,
+    pub catalog_category: ModCategory,
+    pub custom_mod_url: String,
+    pub installing_mod_id: Option<String>,
 }
 
 impl LauncherApp {
@@ -112,6 +131,11 @@ impl LauncherApp {
                 status_message,
                 is_installing_lovely: false,
                 animation_phase: 0.0,
+                catalog_mods: get_curated_catalog(),
+                catalog_search: String::new(),
+                catalog_category: ModCategory::All,
+                custom_mod_url: String::new(),
+                installing_mod_id: None,
             },
             Task::none(),
         )
@@ -247,6 +271,90 @@ impl LauncherApp {
                 }
                 Task::none()
             }
+            Message::InstallCatalogMod(id) => {
+                if let Some(m) = self.catalog_mods.iter().find(|m| m.id == id) {
+                    self.installing_mod_id = Some(id);
+                    self.status_message = format!("Загрузка мода {}...", m.name);
+                    let url = m.download_url.clone();
+                    let folder = m.folder_name.clone();
+                    let mods_dir = self.mods_dir.clone();
+                    Task::perform(
+                        async move {
+                            download_and_install_mod(&url, &folder, &mods_dir, |_| ()).await
+                        },
+                        Message::CatalogInstallResult,
+                    )
+                } else {
+                    Task::none()
+                }
+            }
+            Message::CatalogInstallResult(res) => {
+                self.installing_mod_id = None;
+                match res {
+                    Ok(path) => {
+                        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("мод");
+                        self.status_message = format!("Мод «{name}» успешно установлен!");
+                        self.mods = scan_mods(&self.mods_dir);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Ошибка установки: {e}");
+                    }
+                }
+                Task::none()
+            }
+            Message::DeleteInstalledMod(folder_name) => {
+                match delete_mod(&folder_name, &self.mods_dir) {
+                    Ok(_) => {
+                        self.status_message = format!("Мод «{folder_name}» удалён.");
+                        self.mods = scan_mods(&self.mods_dir);
+                    }
+                    Err(e) => {
+                        self.status_message = format!("Ошибка удаления: {e}");
+                    }
+                }
+                Task::none()
+            }
+            Message::CatalogSearchChanged(query) => {
+                self.catalog_search = query;
+                Task::none()
+            }
+            Message::CatalogCategorySelected(cat) => {
+                self.catalog_category = cat;
+                Task::none()
+            }
+            Message::CustomModUrlChanged(url) => {
+                self.custom_mod_url = url;
+                Task::none()
+            }
+            Message::InstallFromCustomUrl => {
+                let url = self.custom_mod_url.trim().to_string();
+                if url.is_empty() {
+                    self.status_message = "Введите ссылку на репозиторий GitHub или zip-архив".to_string();
+                    return Task::none();
+                }
+
+                let (download_url, folder_name) = if url.ends_with(".zip") {
+                    let folder = url.rsplit('/').next().unwrap_or("CustomMod").trim_end_matches(".zip").to_string();
+                    (url, folder)
+                } else if url.contains("github.com") {
+                    let parts: Vec<&str> = url.trim_end_matches('/').split('/').collect();
+                    let repo = parts.last().unwrap_or(&"CustomMod").to_string();
+                    let zip_url = format!("{}/archive/refs/heads/main.zip", url.trim_end_matches('/'));
+                    (zip_url, repo)
+                } else {
+                    (url.clone(), "CustomMod".to_string())
+                };
+
+                self.installing_mod_id = Some("custom".to_string());
+                self.status_message = format!("Загрузка мода...");
+                let mods_dir = self.mods_dir.clone();
+                Task::perform(
+                    async move {
+                        download_and_install_mod(&download_url, &folder_name, &mods_dir, |_| ()).await
+                    },
+                    Message::CatalogInstallResult,
+                )
+            }
         }
     }
 
@@ -329,6 +437,58 @@ impl LauncherApp {
         })
         .on_press(Message::SelectTab(NavigationTab::Mods));
 
+        let tab_catalog_active = self.current_tab == NavigationTab::Catalog;
+        let dl_sidebar_icon = svg(svg::Handle::from_memory(ICON_DOWNLOAD_SVG))
+            .width(16)
+            .height(16)
+            .style(move |_, _| svg::Style {
+                color: Some(if tab_catalog_active {
+                    ACCENT_APPLE_BLUE
+                } else {
+                    COLOR_LABEL_SECONDARY
+                }),
+            });
+
+        let catalog_badge = container(
+            text(format!("{}", self.catalog_mods.len()))
+                .size(11)
+                .color(COLOR_LABEL_SECONDARY),
+        )
+        .padding([2, 7])
+        .style(|_| container::Style {
+            background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
+            border: Border { radius: 10.0.into(), ..Default::default() },
+            ..Default::default()
+        });
+
+        let tab_catalog_btn = button(
+            row![
+                dl_sidebar_icon,
+                text("Каталог модов").size(13),
+                horizontal_space(),
+                catalog_badge
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center),
+        )
+        .padding([8, 12])
+        .width(Length::Fill)
+        .style(move |_, _| button::Style {
+            background: Some(iced::Background::Color(if tab_catalog_active {
+                Color::from_rgba(0.039, 0.518, 1.0, 0.15)
+            } else {
+                Color::TRANSPARENT
+            })),
+            text_color: if tab_catalog_active {
+                COLOR_LABEL_PRIMARY
+            } else {
+                COLOR_LABEL_SECONDARY
+            },
+            border: Border { radius: 7.0.into(), ..Default::default() },
+            ..Default::default()
+        })
+        .on_press(Message::SelectTab(NavigationTab::Catalog));
+
         let tab_settings_active = self.current_tab == NavigationTab::Settings;
         let gear_icon = svg(svg::Handle::from_memory(ICON_GEAR_SVG))
             .width(16)
@@ -394,7 +554,7 @@ impl LauncherApp {
 
         let sidebar_nav = column![
             sidebar_header,
-            column![tab_mods_btn, tab_settings_btn].spacing(4).padding([4, 10]),
+            column![tab_mods_btn, tab_catalog_btn, tab_settings_btn].spacing(4).padding([4, 10]),
             iced::widget::vertical_space(),
             column![refresh_btn].padding([12, 10])
         ]
@@ -478,6 +638,7 @@ impl LauncherApp {
                 column![
                     text(match self.current_tab {
                         NavigationTab::Mods => "Управление модификациями",
+                        NavigationTab::Catalog => "Каталог и загрузка модов",
                         NavigationTab::Settings => "Настройки окружения",
                     })
                     .size(15)
@@ -523,13 +684,32 @@ impl LauncherApp {
                                 .size(15)
                                 .color(COLOR_LABEL_PRIMARY),
                             text(format!(
-                                "Поместите папки с модами в:\n{}",
+                                "Папка модов: {}\nВы можете легко скачать моды во вкладке «Каталог модов»!",
                                 self.mods_dir.display()
                             ))
                             .size(12)
                             .color(COLOR_LABEL_SECONDARY),
+                            button(
+                                row![
+                                    svg(svg::Handle::from_memory(ICON_DOWNLOAD_SVG))
+                                        .width(13)
+                                        .height(13)
+                                        .style(|_, _| svg::Style { color: Some(Color::WHITE) }),
+                                    text("Перейти в Каталог модов").size(12)
+                                ]
+                                .spacing(6)
+                                .align_y(Alignment::Center)
+                            )
+                            .padding([8, 16])
+                            .style(|_, _| button::Style {
+                                background: Some(iced::Background::Color(ACCENT_APPLE_BLUE)),
+                                text_color: Color::WHITE,
+                                border: Border { radius: 6.0.into(), ..Default::default() },
+                                ..Default::default()
+                            })
+                            .on_press(Message::SelectTab(NavigationTab::Catalog))
                         ]
-                        .spacing(10)
+                        .spacing(12)
                         .align_x(Alignment::Center),
                     )
                     .center_x(Length::Fill)
@@ -609,6 +789,20 @@ impl LauncherApp {
                             .on_toggle(move |_| Message::ToggleMod(idx))
                             .size(16);
 
+                        let folder_for_del = m.folder_name.clone();
+                        let del_icon = svg(svg::Handle::from_memory(ICON_TRASH_SVG))
+                            .width(13)
+                            .height(13)
+                            .style(|_, _| svg::Style { color: Some(COLOR_LABEL_TERTIARY) });
+                        let del_btn = button(del_icon)
+                            .padding([4, 6])
+                            .style(|_, _| button::Style {
+                                background: Some(iced::Background::Color(Color::TRANSPARENT)),
+                                border: Border { radius: 4.0.into(), ..Default::default() },
+                                ..Default::default()
+                            })
+                            .on_press(Message::DeleteInstalledMod(folder_for_del));
+
                         let border_color = if is_on {
                             Color::from_rgba(
                                 0.039,
@@ -621,7 +815,8 @@ impl LauncherApp {
                         };
 
                         let card = container(
-                            row![info_col, horizontal_space(), toggle]
+                            row![info_col, horizontal_space(), del_btn, toggle]
+                                .spacing(10)
                                 .align_y(Alignment::Center)
                                 .padding([12, 16]),
                         )
@@ -645,6 +840,347 @@ impl LauncherApp {
 
                     scrollable(list.padding([18, 24])).height(Length::Fill).into()
                 }
+            }
+            NavigationTab::Catalog => {
+                let categories = [
+                    ModCategory::All,
+                    ModCategory::Core,
+                    ModCategory::Content,
+                    ModCategory::Jokers,
+                    ModCategory::QoL,
+                    ModCategory::Multiplayer,
+                ];
+
+                let mut cat_pills_row = row![].spacing(6).align_y(Alignment::Center);
+                for cat in categories {
+                    let is_selected = self.catalog_category == cat;
+                    let title = cat.title();
+                    let pill_btn = button(text(title).size(11))
+                        .padding([5, 11])
+                        .style(move |_, _| button::Style {
+                            background: Some(iced::Background::Color(if is_selected {
+                                Color::from_rgba(0.039, 0.518, 1.0, 0.22)
+                            } else {
+                                Color::from_rgba(1.0, 1.0, 1.0, 0.05)
+                            })),
+                            text_color: if is_selected {
+                                ACCENT_APPLE_BLUE
+                            } else {
+                                COLOR_LABEL_SECONDARY
+                            },
+                            border: Border {
+                                radius: 12.0.into(),
+                                color: if is_selected {
+                                    Color::from_rgba(0.039, 0.518, 1.0, 0.4)
+                                } else {
+                                    COLOR_CARD_BORDER
+                                },
+                                width: 1.0,
+                            },
+                            ..Default::default()
+                        })
+                        .on_press(Message::CatalogCategorySelected(cat));
+                    cat_pills_row = cat_pills_row.push(pill_btn);
+                }
+
+                let search_bar = text_input("Поиск модов по названию или автору...", &self.catalog_search)
+                    .padding([8, 12])
+                    .size(12)
+                    .on_input(Message::CatalogSearchChanged)
+                    .style(|_, _| text_input::Style {
+                        background: iced::Background::Color(COLOR_CARD_BG),
+                        border: Border {
+                            radius: 8.0.into(),
+                            color: COLOR_CARD_BORDER,
+                            width: 1.0,
+                        },
+                        placeholder: COLOR_LABEL_TERTIARY,
+                        value: COLOR_LABEL_PRIMARY,
+                        selection: ACCENT_APPLE_BLUE,
+                        icon: COLOR_LABEL_TERTIARY,
+                    });
+
+                // Steamodded Recommendation Banner (if Steamodded is not installed)
+                let is_smods_installed = self.mods.iter().any(|m| m.is_smods);
+                let mut banner_col = column![].spacing(10);
+
+                if !is_smods_installed {
+                    let smods_installing = self.installing_mod_id.as_deref() == Some("steamodded");
+                    let smods_banner = container(
+                        row![
+                            column![
+                                text("⚡ Рекомендуется: Steamodded (SMODS)")
+                                    .size(13)
+                                    .color(ACCENT_BALATRO_GOLD),
+                                text("Главный загрузчик модов. Без него моды на джокеры, колоды и контент не работают.")
+                                    .size(11)
+                                    .color(COLOR_LABEL_SECONDARY),
+                            ]
+                            .spacing(2),
+                            horizontal_space(),
+                            button(
+                                text(if smods_installing { "Загрузка..." } else { "Установить SMODS" }).size(12)
+                            )
+                            .padding([6, 14])
+                            .style(move |_, _| button::Style {
+                                background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.839, 0.039, 0.2))),
+                                text_color: ACCENT_BALATRO_GOLD,
+                                border: Border {
+                                    radius: 6.0.into(),
+                                    color: Color::from_rgba(1.0, 0.839, 0.039, 0.5),
+                                    width: 1.0,
+                                },
+                                ..Default::default()
+                            })
+                            .on_press(Message::InstallCatalogMod("steamodded".to_string()))
+                        ]
+                        .align_y(Alignment::Center)
+                        .padding([10, 14])
+                    )
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.839, 0.039, 0.07))),
+                        border: Border {
+                            radius: 8.0.into(),
+                            color: Color::from_rgba(1.0, 0.839, 0.039, 0.3),
+                            width: 1.0,
+                        },
+                        ..Default::default()
+                    });
+
+                    banner_col = banner_col.push(smods_banner);
+                }
+
+                // Custom GitHub / URL Install Bar
+                let custom_installing = self.installing_mod_id.as_deref() == Some("custom");
+                let custom_install_bar = container(
+                    row![
+                        text("Ссылка GitHub:").size(12).color(COLOR_LABEL_SECONDARY),
+                        text_input("https://github.com/пользователь/репозиторий", &self.custom_mod_url)
+                            .padding([6, 10])
+                            .size(12)
+                            .on_input(Message::CustomModUrlChanged)
+                            .style(|_, _| text_input::Style {
+                                background: iced::Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.3)),
+                                border: Border {
+                                    radius: 6.0.into(),
+                                    color: COLOR_CARD_BORDER,
+                                    width: 1.0,
+                                },
+                                placeholder: COLOR_LABEL_TERTIARY,
+                                value: COLOR_LABEL_PRIMARY,
+                                selection: ACCENT_APPLE_BLUE,
+                                icon: COLOR_LABEL_TERTIARY,
+                            }),
+                        button(
+                            text(if custom_installing { "Загрузка..." } else { "Скачать" }).size(12)
+                        )
+                        .padding([6, 14])
+                        .style(|_, _| button::Style {
+                            background: Some(iced::Background::Color(ACCENT_APPLE_BLUE)),
+                            text_color: Color::WHITE,
+                            border: Border { radius: 6.0.into(), ..Default::default() },
+                            ..Default::default()
+                        })
+                        .on_press(Message::InstallFromCustomUrl)
+                    ]
+                    .spacing(10)
+                    .align_y(Alignment::Center)
+                    .padding([8, 12])
+                )
+                .style(|_| container::Style {
+                    background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.03))),
+                    border: Border {
+                        radius: 8.0.into(),
+                        color: COLOR_CARD_BORDER,
+                        width: 1.0,
+                    },
+                    ..Default::default()
+                });
+
+                banner_col = banner_col.push(custom_install_bar);
+
+                let search_lower = self.catalog_search.trim().to_lowercase();
+                let filtered_mods: Vec<_> = self.catalog_mods.iter().filter(|m| {
+                    let match_cat = match self.catalog_category {
+                        ModCategory::All => true,
+                        ModCategory::Core => m.category.contains("Ядро"),
+                        ModCategory::Content => m.category.contains("Контент"),
+                        ModCategory::Jokers => m.category.contains("Джокеры"),
+                        ModCategory::QoL => m.category.contains("QoL"),
+                        ModCategory::Multiplayer => m.category.contains("Мультиплеер"),
+                    };
+
+                    if !match_cat {
+                        return false;
+                    }
+
+                    if search_lower.is_empty() {
+                        true
+                    } else {
+                        m.name.to_lowercase().contains(&search_lower)
+                            || m.author.to_lowercase().contains(&search_lower)
+                            || m.description.to_lowercase().contains(&search_lower)
+                    }
+                }).collect();
+
+                let mut mods_list = column![].spacing(8);
+
+                for m in filtered_mods {
+                    let is_installed = self.mods.iter().any(|im| {
+                        im.folder_name == m.folder_name
+                            || im.folder_name == format!("{}.disabled", m.folder_name)
+                            || im.name.to_lowercase() == m.name.to_lowercase()
+                    });
+
+                    let is_downloading = self.installing_mod_id.as_deref() == Some(&m.id);
+
+                    let dl_icon = svg(svg::Handle::from_memory(ICON_DOWNLOAD_SVG))
+                        .width(12)
+                        .height(12)
+                        .style(|_, _| svg::Style { color: Some(Color::WHITE) });
+
+                    let trash_icon = svg(svg::Handle::from_memory(ICON_TRASH_SVG))
+                        .width(12)
+                        .height(12)
+                        .style(|_, _| svg::Style { color: Some(ACCENT_APPLE_RED) });
+
+                    let action_button: Element<'_, Message> = if is_downloading {
+                        button(text("Загрузка...").size(12))
+                            .padding([6, 14])
+                            .style(|_, _| button::Style {
+                                background: Some(iced::Background::Color(Color::from_rgba(0.039, 0.518, 1.0, 0.4))),
+                                text_color: Color::WHITE,
+                                border: Border { radius: 6.0.into(), ..Default::default() },
+                                ..Default::default()
+                            })
+                            .into()
+                    } else if is_installed {
+                        row![
+                            container(
+                                text("✓ Установлен").size(11).color(ACCENT_APPLE_GREEN)
+                            )
+                            .padding([4, 8])
+                            .style(|_| container::Style {
+                                background: Some(iced::Background::Color(Color::from_rgba(0.196, 0.843, 0.294, 0.12))),
+                                border: Border { radius: 6.0.into(), ..Default::default() },
+                                ..Default::default()
+                            }),
+                            button(row![trash_icon, text("Удалить").size(11).color(ACCENT_APPLE_RED)].spacing(4).align_y(Alignment::Center))
+                                .padding([5, 8])
+                                .style(|_, _| button::Style {
+                                    background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.271, 0.227, 0.12))),
+                                    text_color: ACCENT_APPLE_RED,
+                                    border: Border { radius: 6.0.into(), ..Default::default() },
+                                    ..Default::default()
+                                })
+                                .on_press(Message::DeleteInstalledMod(m.folder_name.clone()))
+                        ]
+                        .spacing(8)
+                        .align_y(Alignment::Center)
+                        .into()
+                    } else {
+                        button(
+                            row![dl_icon, text("Скачать").size(12)]
+                                .spacing(6)
+                                .align_y(Alignment::Center)
+                        )
+                        .padding([6, 14])
+                        .style(|_, _| button::Style {
+                            background: Some(iced::Background::Color(ACCENT_APPLE_BLUE)),
+                            text_color: Color::WHITE,
+                            border: Border { radius: 6.0.into(), ..Default::default() },
+                            ..Default::default()
+                        })
+                        .on_press(Message::InstallCatalogMod(m.id.clone()))
+                        .into()
+                    };
+
+                    let category_badge = container(
+                        text(&m.category).size(10).color(COLOR_LABEL_SECONDARY)
+                    )
+                    .padding([2, 6])
+                    .style(|_| container::Style {
+                        background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))),
+                        border: Border { radius: 4.0.into(), ..Default::default() },
+                        ..Default::default()
+                    });
+
+                    let mut badges_row = row![
+                        text(&m.name).size(14).color(COLOR_LABEL_PRIMARY),
+                        category_badge,
+                    ].spacing(8).align_y(Alignment::Center);
+
+                    if let Some(ref badge_text) = m.badge {
+                        badges_row = badges_row.push(
+                            container(text(badge_text).size(10).color(ACCENT_BALATRO_GOLD))
+                                .padding([2, 6])
+                                .style(|_| container::Style {
+                                    background: Some(iced::Background::Color(Color::from_rgba(1.0, 0.839, 0.039, 0.15))),
+                                    border: Border { radius: 4.0.into(), ..Default::default() },
+                                    ..Default::default()
+                                })
+                        );
+                    }
+
+                    let author_and_ver = row![
+                        text(format!("Автор: {}", m.author)).size(11).color(COLOR_LABEL_TERTIARY),
+                        text(format!("Версия: {}", m.version)).size(11).color(COLOR_LABEL_TERTIARY),
+                    ].spacing(12);
+
+                    let desc = text(&m.description).size(12).color(COLOR_LABEL_SECONDARY);
+
+                    let mut deps_row = row![].spacing(8);
+                    if m.requires_steamodded {
+                        deps_row = deps_row.push(
+                            text("Требует Steamodded").size(10).color(if is_smods_installed { ACCENT_APPLE_GREEN } else { ACCENT_BALATRO_GOLD })
+                        );
+                    }
+                    if m.requires_talisman {
+                        deps_row = deps_row.push(
+                            text("Требует Talisman").size(10).color(COLOR_LABEL_TERTIARY)
+                        );
+                    }
+
+                    let card_info = column![
+                        badges_row,
+                        author_and_ver,
+                        desc,
+                        deps_row
+                    ].spacing(4).width(Length::Fill);
+
+                    let card_row = row![
+                        card_info,
+                        action_button,
+                    ]
+                    .spacing(16)
+                    .align_y(Alignment::Center)
+                    .padding([12, 16]);
+
+                    let card_container = container(card_row)
+                        .width(Length::Fill)
+                        .style(|_| container::Style {
+                            background: Some(iced::Background::Color(COLOR_CARD_BG)),
+                            border: Border {
+                                radius: 8.0.into(),
+                                color: COLOR_CARD_BORDER,
+                                width: 1.0,
+                            },
+                            ..Default::default()
+                        });
+
+                    mods_list = mods_list.push(card_container);
+                }
+
+                let catalog_content = column![
+                    cat_pills_row,
+                    search_bar,
+                    banner_col,
+                    mods_list
+                ]
+                .spacing(12)
+                .padding([18, 24]);
+
+                scrollable(catalog_content).height(Length::Fill).into()
             }
             NavigationTab::Settings => {
                 let path_label = text("Расположение игры (Balatro)").size(13).color(COLOR_LABEL_PRIMARY);

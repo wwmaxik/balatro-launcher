@@ -1,3 +1,4 @@
+mod catalog;
 mod config;
 mod installer;
 mod launcher;
