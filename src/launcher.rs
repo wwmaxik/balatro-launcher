@@ -63,6 +63,37 @@ pub fn ensure_linux_nativefs_compatibility(mods_dir: &Path) {
         return;
     }
     walk_and_patch_nativefs(mods_dir);
+    ensure_steamodded_hand_limit_compatibility(mods_dir);
+}
+
+fn ensure_steamodded_hand_limit_compatibility(mods_dir: &Path) {
+    let smods_dir = mods_dir.join("Steamodded");
+    let utils_lua = smods_dir.join("src").join("utils.lua");
+    if utils_lua.exists() {
+        if let Ok(content) = fs::read_to_string(&utils_lua) {
+            if content.contains("math.max(1, G.GAME.starting_params.play_limit)")
+                && !content.contains("G.GAME.starting_params.play_limit = G.GAME.starting_params.play_limit or 5")
+            {
+                let patched = content.replace(
+                    "function SMODS.update_hand_limit_text(play, discard)\n    if play then",
+                    "function SMODS.update_hand_limit_text(play, discard)\n    if not G.GAME or not G.GAME.starting_params then return end\n    G.GAME.starting_params.play_limit = G.GAME.starting_params.play_limit or 5\n    G.GAME.starting_params.discard_limit = G.GAME.starting_params.discard_limit or 5\n    if play then",
+                );
+                let _ = fs::write(&utils_lua, patched);
+            }
+        }
+    }
+    let hand_limit_toml = smods_dir.join("lovely").join("hand_limit.toml");
+    if hand_limit_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&hand_limit_toml) {
+            if !content.contains("self.GAME.starting_params.play_limit = self.GAME.starting_params.play_limit or 5") {
+                let patched = content.replace(
+                    "payload = '''\nSMODS.update_hand_limit_text(true, true)",
+                    "payload = '''\nif self.GAME and self.GAME.starting_params then\n    self.GAME.starting_params.play_limit = self.GAME.starting_params.play_limit or 5\n    self.GAME.starting_params.discard_limit = self.GAME.starting_params.discard_limit or 5\nend\nSMODS.update_hand_limit_text(true, true)",
+                );
+                let _ = fs::write(&hand_limit_toml, patched);
+            }
+        }
+    }
 }
 
 fn walk_and_patch_nativefs(dir: &Path) {
