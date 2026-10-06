@@ -34,6 +34,23 @@ pub fn scan_mods(mods_dir: &Path) -> Vec<ModInfo> {
             let path = entry.path();
             if path.is_dir() {
                 let folder_name = entry.file_name().to_string_lossy().to_string();
+
+                // Skip internal lovely cache directories (dump, game-dump, log)
+                if folder_name == "dump"
+                    || folder_name == "game-dump"
+                    || folder_name == "log"
+                {
+                    continue;
+                }
+
+                // If folder is named lovely, check if it's just lovely cache container
+                if folder_name.to_lowercase() == "lovely"
+                    && !path.join("lovely.toml").exists()
+                    && !path.join("manifest.json").exists()
+                {
+                    continue;
+                }
+
                 let is_enabled = !folder_name.ends_with(".disabled");
                 let clean_name = if is_enabled {
                     folder_name.clone()
@@ -41,7 +58,6 @@ pub fn scan_mods(mods_dir: &Path) -> Vec<ModInfo> {
                     folder_name.trim_end_matches(".disabled").to_string()
                 };
 
-                // Try reading metadata.json or manifest.json or lovely.toml
                 let (manifest_name, version, author, description) = read_mod_metadata(&path);
                 let display_name = manifest_name.unwrap_or_else(|| clean_name.clone());
                 let is_smods = clean_name.to_lowercase().contains("smods")
@@ -63,7 +79,6 @@ pub fn scan_mods(mods_dir: &Path) -> Vec<ModInfo> {
     }
 
     mods.sort_by(|a, b| {
-        // Steamodded always first
         if a.is_smods && !b.is_smods {
             std::cmp::Ordering::Less
         } else if !a.is_smods && b.is_smods {
@@ -100,6 +115,25 @@ fn read_mod_metadata(
             }
         }
     }
+
+    // Try parsing lovely.toml if present
+    let lovely_toml = mod_path.join("lovely.toml");
+    if lovely_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&lovely_toml) {
+            let mut version = None;
+            for line in content.lines() {
+                let trimmed = line.trim();
+                if trimmed.starts_with("version") {
+                    if let Some(val) = trimmed.split('=').nth(1) {
+                        version = Some(val.trim().trim_matches('"').trim_matches('\'').to_string());
+                        break;
+                    }
+                }
+            }
+            return (None, version, None, None);
+        }
+    }
+
     (None, None, None, None)
 }
 
@@ -136,12 +170,14 @@ mod tests {
         let mod1_path = mods_dir.join("CoolMod");
         let mod2_path = mods_dir.join("DisabledMod.disabled");
         let smods_path = mods_dir.join("Steamodded");
+        let dump_path = mods_dir.join("dump");
         fs::create_dir_all(&mod1_path).unwrap();
         fs::create_dir_all(&mod2_path).unwrap();
         fs::create_dir_all(&smods_path).unwrap();
+        fs::create_dir_all(&dump_path).unwrap();
 
         let scanned = scan_mods(mods_dir);
-        assert_eq!(scanned.len(), 3);
+        assert_eq!(scanned.len(), 3, "dump folder should be ignored");
         assert!(scanned[0].is_smods, "Steamodded should be sorted first");
 
         let cool_mod = scanned.iter().find(|m| m.name == "CoolMod").unwrap();

@@ -12,7 +12,7 @@ use crate::launcher::{find_lovely_lib, launch_game, LaunchConfig};
 use crate::mods::{scan_mods, toggle_mod, ModInfo};
 use crate::scanner::{find_game_executable, find_love_binary, get_default_mods_dir};
 
-// Embedded SVG icons (vectors scale perfectly, zero dependency on system emoji fonts)
+// Embedded SVG icons (vectors scale perfectly, crisp rendering)
 const ICON_CARD_SVG: &[u8] = include_bytes!("../assets/icons/card.svg");
 const ICON_PUZZLE_SVG: &[u8] = include_bytes!("../assets/icons/puzzle.svg");
 const ICON_GEAR_SVG: &[u8] = include_bytes!("../assets/icons/gear.svg");
@@ -20,24 +20,24 @@ const ICON_REFRESH_SVG: &[u8] = include_bytes!("../assets/icons/refresh.svg");
 const ICON_FOLDER_SVG: &[u8] = include_bytes!("../assets/icons/folder.svg");
 
 // ==========================================
-// APPLE HIG DESIGN SYSTEM & BALATRO ACCENTS
+// APPLE HIG DESIGN SYSTEM & BALATRO PALETTE
 // ==========================================
 pub const COLOR_WINDOW_BG: Color = Color::from_rgb(0.094, 0.098, 0.106); // #18191b (macOS Dark Canvas)
 pub const COLOR_SIDEBAR_BG: Color = Color::from_rgb(0.118, 0.122, 0.133); // #1e1f22 (Sidebar Material)
-pub const COLOR_CARD_BG: Color = Color::from_rgb(0.145, 0.153, 0.165); // #25272a (Grouped Content Surface)
-pub const COLOR_CARD_BORDER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.07); // Hairline separator
-pub const COLOR_CARD_ACTIVE_BORDER: Color = Color::from_rgba(0.0, 0.65, 0.95, 0.45); // Subtle active glow
+pub const COLOR_CARD_BG: Color = Color::from_rgb(0.145, 0.153, 0.165); // #25272a (Card Surface)
+pub const COLOR_CARD_BORDER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.08); // Subtle separator
+pub const COLOR_CARD_ACTIVE_BORDER: Color = Color::from_rgba(0.18, 0.54, 0.96, 0.5); // Apple Blue accent border
 
-// Semantic typography & labels:
+// Typography & Labels:
 pub const COLOR_LABEL_PRIMARY: Color = Color::from_rgb(0.96, 0.96, 0.97); // 100% Label
 pub const COLOR_LABEL_SECONDARY: Color = Color::from_rgb(0.68, 0.70, 0.74); // Secondary Label
-pub const COLOR_LABEL_TERTIARY: Color = Color::from_rgb(0.46, 0.48, 0.52); // Tertiary / Caption
+pub const COLOR_LABEL_TERTIARY: Color = Color::from_rgb(0.48, 0.50, 0.54); // Tertiary / Caption
 
-// Vibrant Status & Brand Accents:
-pub const ACCENT_BALATRO_GOLD: Color = Color::from_rgb(0.98, 0.76, 0.20); // Balatro Gold / Amber
-pub const ACCENT_BALATRO_RED: Color = Color::from_rgb(0.92, 0.28, 0.25); // Balatro Red (Joker)
-pub const ACCENT_APPLE_BLUE: Color = Color::from_rgb(0.18, 0.54, 0.96); // macOS Accent Blue
-pub const ACCENT_SYSTEM_GREEN: Color = Color::from_rgb(0.24, 0.78, 0.45); // Success indicator
+// Accents:
+pub const ACCENT_BALATRO_GOLD: Color = Color::from_rgb(0.98, 0.76, 0.20);
+pub const ACCENT_BALATRO_RED: Color = Color::from_rgb(0.92, 0.28, 0.25);
+pub const ACCENT_APPLE_BLUE: Color = Color::from_rgb(0.18, 0.54, 0.96);
+pub const ACCENT_SYSTEM_GREEN: Color = Color::from_rgb(0.24, 0.78, 0.45);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NavigationTab {
@@ -89,9 +89,9 @@ impl LauncherApp {
             .unwrap_or_default();
 
         let status_message = if love_binary.is_none() {
-            "Внимание: LÖVE не найден в системе (установи: sudo apt install love)".to_string()
+            "LÖVE не найден в системе (sudo apt install love)".to_string()
         } else if game_path.is_none() {
-            "Игра не обнаружена автоматически. Укажи путь в разделе Настройки.".to_string()
+            "Игра не обнаружена. Укажите путь в Настройках.".to_string()
         } else {
             "Система готова к запуску".to_string()
         };
@@ -129,7 +129,7 @@ impl LauncherApp {
                 self.mods = scan_mods(&self.mods_dir);
                 self.lovely_lib =
                     find_lovely_lib(self.game_path.as_deref().and_then(|p| p.parent()));
-                self.status_message = "Данные и список модов обновлены".to_string();
+                self.status_message = "Данные обновлены".to_string();
                 Task::none()
             }
             Message::ToggleMod(index) => {
@@ -239,10 +239,10 @@ impl LauncherApp {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        // SIDEBAR (macOS HIG Sidebars pattern with clean crisp SVG icons)
+        // SIDEBAR HEADER
         let brand_icon = svg(svg::Handle::from_memory(ICON_CARD_SVG))
-            .width(22)
-            .height(22)
+            .width(20)
+            .height(20)
             .style(|_, _| svg::Style {
                 color: Some(ACCENT_BALATRO_RED),
             });
@@ -373,13 +373,13 @@ impl LauncherApp {
             .spacing(8)
             .align_y(Alignment::Center),
         )
-        .padding([6, 12])
+        .padding([8, 12])
         .width(Length::Fill)
         .style(|_, _| button::Style {
             background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
             text_color: COLOR_LABEL_SECONDARY,
             border: Border {
-                radius: 6.0.into(),
+                radius: 8.0.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -388,9 +388,9 @@ impl LauncherApp {
 
         let sidebar_nav = column![
             app_brand,
-            column![tab_mods_btn, tab_settings_btn].spacing(4).padding([0, 8]),
+            column![tab_mods_btn, tab_settings_btn].spacing(4).padding([0, 10]),
             iced::widget::vertical_space(),
-            column![refresh_btn].padding([12, 8])
+            column![refresh_btn].padding([12, 10])
         ]
         .width(Length::Fixed(220.0))
         .height(Length::Fill);
@@ -407,11 +407,11 @@ impl LauncherApp {
                 ..Default::default()
             });
 
-        // TOP TOOLBAR (Apple HIG: Unified titlebar, clear status pills)
+        // TOP TOOLBAR
         let love_indicator = container(
             row![
                 text(if self.love_binary.is_some() { "●" } else { "○" })
-                    .size(10)
+                    .size(9)
                     .color(if self.love_binary.is_some() { ACCENT_SYSTEM_GREEN } else { ACCENT_BALATRO_RED }),
                 text(if self.love_binary.is_some() { "LÖVE 11.5" } else { "Нет LÖVE" })
                     .size(12)
@@ -420,11 +420,11 @@ impl LauncherApp {
             .spacing(6)
             .align_y(Alignment::Center)
         )
-        .padding([4, 10])
+        .padding([5, 12])
         .style(|_| container::Style {
             background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.04))),
             border: Border {
-                radius: 12.0.into(),
+                radius: 14.0.into(),
                 color: COLOR_CARD_BORDER,
                 width: 1.0,
             },
@@ -434,7 +434,7 @@ impl LauncherApp {
         let lovely_pill = container(
             row![
                 text(if self.lovely_lib.is_some() { "●" } else { "○" })
-                    .size(10)
+                    .size(9)
                     .color(if self.lovely_lib.is_some() { ACCENT_APPLE_BLUE } else { COLOR_LABEL_TERTIARY }),
                 text(if self.lovely_lib.is_some() { "Lovely Активен" } else { "Lovely выкл" })
                     .size(12)
@@ -443,11 +443,11 @@ impl LauncherApp {
             .spacing(6)
             .align_y(Alignment::Center)
         )
-        .padding([4, 10])
+        .padding([5, 12])
         .style(|_| container::Style {
             background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.04))),
             border: Border {
-                radius: 12.0.into(),
+                radius: 14.0.into(),
                 color: COLOR_CARD_BORDER,
                 width: 1.0,
             },
@@ -465,14 +465,14 @@ impl LauncherApp {
                     .color(COLOR_LABEL_PRIMARY),
                     text(&self.status_message).size(11).color(COLOR_LABEL_TERTIARY),
                 ]
-                .spacing(2),
+                .spacing(3),
                 horizontal_space(),
                 love_indicator,
                 lovely_pill,
             ]
             .spacing(12)
             .align_y(Alignment::Center)
-            .padding([14, 20]),
+            .padding([16, 24]),
         )
         .style(|_| container::Style {
             border: Border {
@@ -512,7 +512,7 @@ impl LauncherApp {
                     .center_y(Length::Fill)
                     .into()
                 } else {
-                    let mut list = column![].spacing(8);
+                    let mut list = column![].spacing(10);
 
                     for (idx, m) in self.mods.iter().enumerate() {
                         let is_on = m.is_enabled;
@@ -540,7 +540,7 @@ impl LauncherApp {
                             )
                             .padding([2, 6])
                             .style(|_| container::Style {
-                                background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
+                                background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.06))),
                                 border: Border {
                                     radius: 4.0.into(),
                                     ..Default::default()
@@ -572,13 +572,20 @@ impl LauncherApp {
                             String::new()
                         };
 
+                        let has_subtext = !author_desc.is_empty();
                         let author_label = text(author_desc).size(12).color(COLOR_LABEL_TERTIARY);
 
-                        let info_col = column![
-                            row![badge, name, version].spacing(8).align_y(Alignment::Center),
-                            author_label,
-                        ]
-                        .spacing(2);
+                        let info_col = if has_subtext {
+                            column![
+                                row![badge, name, version].spacing(8).align_y(Alignment::Center),
+                                author_label,
+                            ]
+                            .spacing(3)
+                        } else {
+                            column![
+                                row![badge, name, version].spacing(8).align_y(Alignment::Center),
+                            ]
+                        };
 
                         let toggle = toggler(is_on)
                             .on_toggle(move |_| Message::ToggleMod(idx))
@@ -587,7 +594,7 @@ impl LauncherApp {
                         let card = container(
                             row![info_col, horizontal_space(), toggle]
                                 .align_y(Alignment::Center)
-                                .padding([12, 16]),
+                                .padding([14, 18]),
                         )
                         .style(move |_| container::Style {
                             background: Some(iced::Background::Color(COLOR_CARD_BG)),
@@ -611,7 +618,7 @@ impl LauncherApp {
                         list = list.push(card);
                     }
 
-                    scrollable(list.padding([16, 20])).height(Length::Fill).into()
+                    scrollable(list.padding([20, 24])).height(Length::Fill).into()
                 }
             }
             NavigationTab::Settings => {
@@ -633,7 +640,7 @@ impl LauncherApp {
                         selection: ACCENT_APPLE_BLUE,
                     });
 
-                let save_btn = button(text("Сохранить путь").size(13))
+                let save_btn = button(text("Сохранить").size(13))
                     .padding([8, 16])
                     .style(|_, _| button::Style {
                         background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.08))),
@@ -709,19 +716,19 @@ impl LauncherApp {
                     ..Default::default()
                 });
 
-                let settings_col = column![path_card, lovely_card].spacing(14).padding([16, 20]);
+                let settings_col = column![path_card, lovely_card].spacing(14).padding([20, 24]);
                 scrollable(settings_col).height(Length::Fill).into()
             }
         };
 
-        // BOTTOM ACTION BAR (Apple HIG: Single Primary Action, clean segmented feel)
+        // BOTTOM ACTION BAR
         let mode_toggle = toggler(self.config.modded_mode)
             .label(if self.config.modded_mode {
                 "Режим: С модами (Lovely)"
             } else {
                 "Режим: Оригинал (Vanilla)"
             })
-            .size(20)
+            .size(18)
             .on_toggle(Message::SetModdedMode);
 
         let launch_btn = button(
@@ -741,7 +748,7 @@ impl LauncherApp {
                 ..Default::default()
             },
             shadow: Shadow {
-                color: Color::from_rgba(0.92, 0.28, 0.25, 0.3),
+                color: Color::from_rgba(0.92, 0.28, 0.25, 0.35),
                 offset: Vector::new(0.0, 2.0),
                 blur_radius: 6.0,
             },
@@ -752,7 +759,7 @@ impl LauncherApp {
         let bottom_bar = container(
             row![mode_toggle, horizontal_space(), launch_btn]
                 .align_y(Alignment::Center)
-                .padding([12, 20]),
+                .padding([14, 24]),
         )
         .style(|_| container::Style {
             background: Some(iced::Background::Color(COLOR_SIDEBAR_BG)),
@@ -764,12 +771,12 @@ impl LauncherApp {
             ..Default::default()
         });
 
-        // CONTENT PANE (Header + Dynamic View + Bottom Bar)
+        // CONTENT PANE (Header + View + Bottom Bar)
         let content_pane = column![top_header, main_view, bottom_bar]
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // ROOT TWO-PANE SPLIT (macOS Standard Sidebar + Detail layout)
+        // ROOT TWO-PANE SPLIT
         let root_split = row![sidebar_container, content_pane]
             .width(Length::Fill)
             .height(Length::Fill);
