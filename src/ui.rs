@@ -1,5 +1,5 @@
 use iced::widget::{
-    button, column, container, horizontal_space, row, scrollable, text, text_input, toggler,
+    button, column, container, horizontal_space, row, scrollable, svg, text, text_input, toggler,
 };
 use iced::{
     Alignment, Border, Color, Element, Length, Shadow, Task, Vector,
@@ -12,10 +12,16 @@ use crate::launcher::{find_lovely_lib, launch_game, LaunchConfig};
 use crate::mods::{scan_mods, toggle_mod, ModInfo};
 use crate::scanner::{find_game_executable, find_love_binary, get_default_mods_dir};
 
+// Embedded SVG icons (vectors scale perfectly, zero dependency on system emoji fonts)
+const ICON_CARD_SVG: &[u8] = include_bytes!("../assets/icons/card.svg");
+const ICON_PUZZLE_SVG: &[u8] = include_bytes!("../assets/icons/puzzle.svg");
+const ICON_GEAR_SVG: &[u8] = include_bytes!("../assets/icons/gear.svg");
+const ICON_REFRESH_SVG: &[u8] = include_bytes!("../assets/icons/refresh.svg");
+const ICON_FOLDER_SVG: &[u8] = include_bytes!("../assets/icons/folder.svg");
+
 // ==========================================
 // APPLE HIG DESIGN SYSTEM & BALATRO ACCENTS
 // ==========================================
-// Semantic dark palette with depth layering:
 pub const COLOR_WINDOW_BG: Color = Color::from_rgb(0.094, 0.098, 0.106); // #18191b (macOS Dark Canvas)
 pub const COLOR_SIDEBAR_BG: Color = Color::from_rgb(0.118, 0.122, 0.133); // #1e1f22 (Sidebar Material)
 pub const COLOR_CARD_BG: Color = Color::from_rgb(0.145, 0.153, 0.165); // #25272a (Grouped Content Surface)
@@ -233,18 +239,25 @@ impl LauncherApp {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
-        // SIDEBAR (macOS HIG Sidebars pattern: 220px fixed, clean icons, badges)
+        // SIDEBAR (macOS HIG Sidebars pattern with clean crisp SVG icons)
+        let brand_icon = svg(svg::Handle::from_memory(ICON_CARD_SVG))
+            .width(22)
+            .height(22)
+            .style(|_, _| svg::Style {
+                color: Some(ACCENT_BALATRO_RED),
+            });
+
         let app_brand = row![
-            text("🃏").size(24),
+            brand_icon,
             column![
                 text("Balatro").size(15).color(COLOR_LABEL_PRIMARY),
                 text("Launcher").size(11).color(COLOR_LABEL_TERTIARY),
             ]
             .spacing(1)
         ]
-        .spacing(10)
+        .spacing(12)
         .align_y(Alignment::Center)
-        .padding([16, 16]);
+        .padding([18, 16]);
 
         let mods_count_badge = container(
             text(format!("{}", self.mods.len()))
@@ -262,9 +275,20 @@ impl LauncherApp {
         });
 
         let tab_mods_active = self.current_tab == NavigationTab::Mods;
+        let puzzle_icon = svg(svg::Handle::from_memory(ICON_PUZZLE_SVG))
+            .width(16)
+            .height(16)
+            .style(move |_, _| svg::Style {
+                color: Some(if tab_mods_active {
+                    COLOR_LABEL_PRIMARY
+                } else {
+                    COLOR_LABEL_SECONDARY
+                }),
+            });
+
         let tab_mods_btn = button(
             row![
-                text("🧩").size(14),
+                puzzle_icon,
                 text("Модификации").size(13),
                 horizontal_space(),
                 mods_count_badge
@@ -294,9 +318,20 @@ impl LauncherApp {
         .on_press(Message::SelectTab(NavigationTab::Mods));
 
         let tab_settings_active = self.current_tab == NavigationTab::Settings;
+        let gear_icon = svg(svg::Handle::from_memory(ICON_GEAR_SVG))
+            .width(16)
+            .height(16)
+            .style(move |_, _| svg::Style {
+                color: Some(if tab_settings_active {
+                    COLOR_LABEL_PRIMARY
+                } else {
+                    COLOR_LABEL_SECONDARY
+                }),
+            });
+
         let tab_settings_btn = button(
             row![
-                text("⚙️").size(14),
+                gear_icon,
                 text("Настройки").size(13),
             ]
             .spacing(10)
@@ -323,9 +358,16 @@ impl LauncherApp {
         })
         .on_press(Message::SelectTab(NavigationTab::Settings));
 
+        let refresh_icon = svg(svg::Handle::from_memory(ICON_REFRESH_SVG))
+            .width(14)
+            .height(14)
+            .style(|_, _| svg::Style {
+                color: Some(COLOR_LABEL_SECONDARY),
+            });
+
         let refresh_btn = button(
             row![
-                text("🔄").size(13),
+                refresh_icon,
                 text("Обновить").size(12),
             ]
             .spacing(8)
@@ -445,9 +487,16 @@ impl LauncherApp {
         let main_view: Element<'_, Message> = match self.current_tab {
             NavigationTab::Mods => {
                 if self.mods.is_empty() {
+                    let folder_icon = svg(svg::Handle::from_memory(ICON_FOLDER_SVG))
+                        .width(42)
+                        .height(42)
+                        .style(|_, _| svg::Style {
+                            color: Some(COLOR_LABEL_TERTIARY),
+                        });
+
                     container(
                         column![
-                            text("📁").size(36),
+                            folder_icon,
                             text("Моды не найдены").size(16).color(COLOR_LABEL_PRIMARY),
                             text(format!(
                                 "Поместите распакованные папки с модами в:\n{}",
@@ -456,7 +505,7 @@ impl LauncherApp {
                             .size(12)
                             .color(COLOR_LABEL_SECONDARY),
                         ]
-                        .spacing(10)
+                        .spacing(12)
                         .align_x(Alignment::Center),
                     )
                     .center_x(Length::Fill)
