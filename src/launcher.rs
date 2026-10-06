@@ -71,15 +71,22 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
     let utils_lua = smods_dir.join("src").join("utils.lua");
     if utils_lua.exists() {
         if let Ok(content) = fs::read_to_string(&utils_lua) {
-            if content.contains("math.max(1, G.GAME.starting_params.play_limit)")
-                && !content.contains("G.GAME.starting_params.play_limit = G.GAME.starting_params.play_limit or 5")
+            let mut patched = content;
+            if patched.contains("math.max(1, G.GAME.starting_params.play_limit)")
+                && !patched.contains("G.GAME.starting_params.play_limit = G.GAME.starting_params.play_limit or 5")
             {
-                let patched = content.replace(
+                patched = patched.replace(
                     "function SMODS.update_hand_limit_text(play, discard)\n    if play then",
                     "function SMODS.update_hand_limit_text(play, discard)\n    if not G.GAME or not G.GAME.starting_params then return end\n    G.GAME.starting_params.play_limit = G.GAME.starting_params.play_limit or 5\n    G.GAME.starting_params.discard_limit = G.GAME.starting_params.discard_limit or 5\n    if play then",
                 );
-                let _ = fs::write(&utils_lua, patched);
             }
+            if patched.contains("value = value + card.ability[property]") {
+                patched = patched.replace(
+                    "value = value + card.ability[property]",
+                    "if card and card.ability and card.ability[property] then value = value + (tonumber(card.ability[property]) or 0) end",
+                );
+            }
+            let _ = fs::write(&utils_lua, patched);
         }
     }
     let hand_limit_toml = smods_dir.join("lovely").join("hand_limit.toml");
