@@ -120,7 +120,43 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
                     "if card and card.ability and card.ability[property] then value = value + (tonumber(card.ability[property]) or 0) end",
                 );
             }
+            if patched.contains("local edition = G.P_CENTERS[self.edition.key]") {
+                patched = patched.replace(
+                    "function Card:calculate_edition(context)\n    if self.edition then\n        local edition = G.P_CENTERS[self.edition.key]",
+                    "function Card:calculate_edition(context)\n    if self.edition then\n        if not self.edition.key then\n            for k, v in pairs(self.edition) do\n                if v and G.P_CENTERS['e_' .. k] then\n                    self.edition.key = 'e_' .. k\n                    break\n                end\n            end\n        end\n        local edition = self.edition.key and G.P_CENTERS[self.edition.key]",
+                );
+            }
+            if patched.contains("G.SCORE_DISPLAY_QUEUE = nil") && !patched.contains("self.GAME.starting_params.boosters_in_shop") {
+                patched = patched.replace(
+                    "function Game:start_run(args)\n    game_start_run(self, args)\n    G.SCORE_DISPLAY_QUEUE = nil",
+                    "function Game:start_run(args)\n    game_start_run(self, args)\n    if self.GAME then\n        self.GAME.starting_params = self.GAME.starting_params or {}\n        self.GAME.starting_params.play_limit = self.GAME.starting_params.play_limit or 5\n        self.GAME.starting_params.discard_limit = self.GAME.starting_params.discard_limit or 5\n        self.GAME.starting_params.boosters_in_shop = self.GAME.starting_params.boosters_in_shop or 2\n        self.GAME.starting_params.vouchers_in_shop = self.GAME.starting_params.vouchers_in_shop or 1\n        self.GAME.modifiers = self.GAME.modifiers or {}\n        self.GAME.round_resets = self.GAME.round_resets or {}\n        self.GAME.round_resets.free_rerolls = self.GAME.round_resets.free_rerolls or 0\n        if not self.GAME.current_scoring_calculation and SMODS.Scoring_Calculations and SMODS.Scoring_Calculations['multiply'] then\n            self.GAME.current_scoring_calculation = SMODS.Scoring_Calculations['multiply']:new()\n        end\n        if self.GAME.current_round and type(self.GAME.current_round.voucher) == 'string' then\n            local v_key = self.GAME.current_round.voucher\n            self.GAME.current_round.voucher = { v_key, spawn = { [v_key] = true } }\n        end\n    end\n    G.SCORE_DISPLAY_QUEUE = nil",
+                );
+            }
             let _ = fs::write(&utils_lua, patched);
+        }
+    }
+    let card_draw_lua = smods_dir.join("src").join("card_draw.lua");
+    if card_draw_lua.exists() {
+        if let Ok(content) = fs::read_to_string(&card_draw_lua) {
+            if content.contains("local edition = G.P_CENTERS[self.edition.key]") {
+                let patched = content.replace(
+                    "if self.edition then \n                local edition = G.P_CENTERS[self.edition.key]",
+                    "if self.edition then \n                if not self.edition.key then\n                    for k, v in pairs(self.edition) do\n                        if v and G.P_CENTERS['e_' .. k] then\n                            self.edition.key = 'e_' .. k\n                            break\n                        end\n                    end\n                end\n                local edition = self.edition.key and G.P_CENTERS[self.edition.key]",
+                );
+                let _ = fs::write(&card_draw_lua, patched);
+            }
+        }
+    }
+    let overrides_lua = smods_dir.join("src").join("overrides.lua");
+    if overrides_lua.exists() {
+        if let Ok(content) = fs::read_to_string(&overrides_lua) {
+            if content.contains("local on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load") {
+                let patched = content.replace(
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load",
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tif self.edition and not self.edition.key then\n\t\tfor k, v in pairs(self.edition) do\n\t\t\tif v and G.P_CENTERS['e_' .. k] then\n\t\t\t\tself.edition.key = 'e_' .. k\n\t\t\t\tbreak\n\t\t\tend\n\t\tend\n\tend\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key] and G.P_CENTERS[self.edition.key].on_load",
+                );
+                let _ = fs::write(&overrides_lua, patched);
+            }
         }
     }
     let hand_limit_toml = smods_dir.join("lovely").join("hand_limit.toml");
@@ -133,6 +169,25 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
                 );
                 let _ = fs::write(&hand_limit_toml, patched);
             }
+        }
+    }
+    let shop_toml = smods_dir.join("lovely").join("shop.toml");
+    if shop_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&shop_toml) {
+            let mut patched = content;
+            if patched.contains("for i=1, G.GAME.starting_params.boosters_in_shop + (G.GAME.modifiers.extra_boosters or 0) do") {
+                patched = patched.replace(
+                    "for i=1, G.GAME.starting_params.boosters_in_shop + (G.GAME.modifiers.extra_boosters or 0) do",
+                    "for i=1, ((G.GAME.starting_params and G.GAME.starting_params.boosters_in_shop) or 2) + ((G.GAME.modifiers and G.GAME.modifiers.extra_boosters) or 0) do",
+                );
+            }
+            if patched.contains("local vouchers_to_spawn = 0\nfor _,_ in pairs(G.GAME.current_round.voucher.spawn) do") {
+                patched = patched.replace(
+                    "local vouchers_to_spawn = 0\nfor _,_ in pairs(G.GAME.current_round.voucher.spawn) do vouchers_to_spawn = vouchers_to_spawn + 1 end\nif vouchers_to_spawn < G.GAME.starting_params.vouchers_in_shop + (G.GAME.modifiers.extra_vouchers or 0) then",
+                    "if G.GAME.current_round and type(G.GAME.current_round.voucher) == 'string' then\n    local v_key = G.GAME.current_round.voucher\n    G.GAME.current_round.voucher = { v_key, spawn = { [v_key] = true } }\nend\nif not (G.GAME.current_round and G.GAME.current_round.voucher and G.GAME.current_round.voucher.spawn) then\n    G.GAME.current_round.voucher = SMODS.get_next_vouchers()\nend\nlocal v_in_shop = (G.GAME.starting_params and G.GAME.starting_params.vouchers_in_shop) or 1\nlocal extra_v = (G.GAME.modifiers and G.GAME.modifiers.extra_vouchers) or 0\nlocal vouchers_to_spawn = 0\nfor _,_ in pairs(G.GAME.current_round.voucher.spawn) do vouchers_to_spawn = vouchers_to_spawn + 1 end\nif vouchers_to_spawn < v_in_shop + extra_v then",
+                );
+            }
+            let _ = fs::write(&shop_toml, patched);
         }
     }
     let scoring_calc_toml = smods_dir.join("lovely").join("scoring_calculation.toml");
@@ -181,13 +236,20 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
     let game_obj_lua = smods_dir.join("src").join("game_object.lua");
     if game_obj_lua.exists() {
         if let Ok(content) = fs::read_to_string(&game_obj_lua) {
-            if content.contains("math.min(cfg.choose + (G.GAME.modifiers.booster_choice_mod or 0)") {
-                let patched = content.replace(
+            let mut patched = content;
+            if patched.contains("math.min(cfg.choose + (G.GAME.modifiers.booster_choice_mod or 0)") {
+                patched = patched.replace(
                     "local cfg = (card and card.ability) or self.config\n        return {\n            vars = { math.min(cfg.choose + (G.GAME.modifiers.booster_choice_mod or 0), math.max(1, cfg.extra + (G.GAME.modifiers.booster_size_mod or 0))), math.max(1, cfg.extra + (G.GAME.modifiers.booster_size_mod or 0)) },",
                     "local cfg = (card and card.ability) or self.config or {}\n        local choose = cfg.choose or (self.config and self.config.choose) or 1\n        local extra = cfg.extra or (self.config and self.config.extra) or 3\n        local choice_mod = (G.GAME and G.GAME.modifiers and G.GAME.modifiers.booster_choice_mod) or 0\n        local size_mod = (G.GAME and G.GAME.modifiers and G.GAME.modifiers.booster_size_mod) or 0\n        local total_size = math.max(1, extra + size_mod)\n        local total_choose = math.min(choose + choice_mod, total_size)\n        return {\n            vars = { total_choose, total_size },",
                 );
-                let _ = fs::write(&game_obj_lua, patched);
             }
+            if patched.contains("function SMODS.Edition.get_card_limit_key(card)\n        return G.P_CENTERS[card.edition.key]:card_limit_key(card)\n    end") {
+                patched = patched.replace(
+                    "function SMODS.Edition.get_card_limit_key(card)\n        return G.P_CENTERS[card.edition.key]:card_limit_key(card)\n    end",
+                    "function SMODS.Edition.get_card_limit_key(card)\n        if card and card.edition then\n            if not card.edition.key then\n                for k, v in pairs(card.edition) do\n                    if v and G.P_CENTERS['e_' .. k] then\n                        card.edition.key = 'e_' .. k\n                        break\n                    end\n                end\n            end\n            local ed_center = card.edition.key and G.P_CENTERS[card.edition.key]\n            if ed_center and ed_center.card_limit_key then\n                return ed_center:card_limit_key(card)\n            end\n        end\n        return nil\n    end",
+                );
+            }
+            let _ = fs::write(&game_obj_lua, patched);
         }
     }
 }
