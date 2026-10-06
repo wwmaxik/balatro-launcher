@@ -55,10 +55,44 @@ pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
     cmd.spawn()
 }
 
+#[cfg(unix)]
+pub fn ensure_linux_environment() {
+    if let Some(data_dir) = dirs::data_dir() {
+        let love_dir = data_dir.join("love");
+        let _ = fs::create_dir_all(&love_dir);
+        let lower = love_dir.join("balatro");
+        let upper = love_dir.join("Balatro");
+        let standalone = data_dir.join("balatro");
+
+        let target = if lower.exists() {
+            lower.clone()
+        } else if upper.exists() {
+            upper.clone()
+        } else {
+            let _ = fs::create_dir_all(&lower);
+            lower.clone()
+        };
+
+        let mods_dir = target.join("Mods");
+        let _ = fs::create_dir_all(&mods_dir);
+
+        if !upper.exists() && target != upper {
+            let _ = std::os::unix::fs::symlink(&target, &upper);
+        }
+        if !standalone.exists() && target != standalone {
+            let _ = std::os::unix::fs::symlink(&target, &standalone);
+        }
+    }
+}
+
+#[cfg(not(unix))]
+pub fn ensure_linux_environment() {}
+
 /// Recursively scans mods directory and updates any `nativefs.lua` files
 /// to be Linux-compatible (POSIX stat/opendir fallback, no undefined symbol PHYSFS crash,
 /// guarded cdef definitions).
 pub fn ensure_linux_nativefs_compatibility(mods_dir: &Path) {
+    ensure_linux_environment();
     if !mods_dir.exists() {
         return;
     }

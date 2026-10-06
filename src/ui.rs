@@ -95,6 +95,7 @@ pub struct LauncherApp {
 
 impl LauncherApp {
     pub fn new() -> (Self, Task<Message>) {
+        crate::launcher::ensure_linux_environment();
         let config = load_config();
         let love_binary = config.love_binary.clone().or_else(find_love_binary);
         let game_path = find_game_executable(config.game_path.as_deref());
