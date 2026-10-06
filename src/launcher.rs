@@ -10,10 +10,22 @@ pub struct LaunchConfig {
 }
 
 pub fn launch_game(config: &LaunchConfig) -> std::io::Result<Child> {
-    let mut cmd = Command::new(&config.love_binary);
+    // If game_target is a standalone fused binary (like ~/Balatro/balatro), run it directly!
+    // Otherwise run via love <path>.
+    let is_direct_binary = config.game_target.is_file()
+        && config
+            .game_target
+            .file_name()
+            .map(|n| n == "balatro" || n == "Balatro")
+            .unwrap_or(false);
 
-    // If game_target is Balatro.exe or Balatro.love, love takes it as an argument
-    cmd.arg(&config.game_target);
+    let mut cmd = if is_direct_binary {
+        Command::new(&config.game_target)
+    } else {
+        let mut c = Command::new(&config.love_binary);
+        c.arg(&config.game_target);
+        c
+    };
 
     // If launched in modded mode and lovely injector lib exists
     if config.modded {
