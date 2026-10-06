@@ -151,16 +151,28 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
     if overrides_lua.exists() {
         if let Ok(content) = fs::read_to_string(&overrides_lua) {
             let mut patched = content;
-            if patched.contains("card_init(self, X, Y, W, H, card, center, params)") && !patched.contains("self.ability.card_limit = self.ability.card_limit or 0") {
+            if !patched.contains("local function init_card_ability_defaults") {
+                patched = patched.replace(
+                    "local card_init = Card.init",
+                    "local function init_card_ability_defaults(card)\n\tif not card or not card.ability then return end\n\tlocal ab = card.ability\n\tab.card_limit = ab.card_limit or 0\n\tab.extra_slots_used = ab.extra_slots_used or 0\n\tab.bonus = ab.bonus or 0\n\tab.perma_bonus = ab.perma_bonus or 0\n\tab.perma_x_chips = ab.perma_x_chips or 0\n\tab.perma_mult = ab.perma_mult or 0\n\tab.perma_x_mult = ab.perma_x_mult or 0\n\tab.perma_h_chips = ab.perma_h_chips or 0\n\tab.perma_h_x_chips = ab.perma_h_x_chips or 0\n\tab.perma_h_mult = ab.perma_h_mult or 0\n\tab.perma_h_x_mult = ab.perma_h_x_mult or 0\n\tab.perma_p_dollars = ab.perma_p_dollars or 0\n\tab.perma_h_dollars = ab.perma_h_dollars or 0\n\tab.perma_repetitions = ab.perma_repetitions or 0\n\tab.perma_score = ab.perma_score or 0\n\tab.perma_h_score = ab.perma_h_score or 0\n\tab.perma_x_score = ab.perma_x_score or 0\n\tab.perma_h_x_score = ab.perma_h_x_score or 0\n\tab.perma_blind_size = ab.perma_blind_size or 0\n\tab.perma_h_blind_size = ab.perma_h_blind_size or 0\n\tab.perma_x_blind_size = ab.perma_x_blind_size or 0\n\tab.perma_h_x_blind_size = ab.perma_h_x_blind_size or 0\n\tab.h_chips = ab.h_chips or 0\n\tab.x_chips = ab.x_chips or 1\n\tab.h_x_chips = ab.h_x_chips or 1\n\tab.repetitions = ab.repetitions or 0\nend\n\nlocal card_init = Card.init",
+                );
+            }
+            if patched.contains("card_init(self, X, Y, W, H, card, center, params)") && !patched.contains("init_card_ability_defaults(self)") {
                 patched = patched.replace(
                     "card_init(self, X, Y, W, H, card, center, params)",
-                    "card_init(self, X, Y, W, H, card, center, params)\n\tif self.ability then\n\t\tself.ability.card_limit = self.ability.card_limit or 0\n\t\tself.ability.extra_slots_used = self.ability.extra_slots_used or 0\n\tend",
+                    "card_init(self, X, Y, W, H, card, center, params)\n\tinit_card_ability_defaults(self)",
+                );
+            }
+            if patched.contains("function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)") && !patched.contains("init_card_ability_defaults(self)") {
+                patched = patched.replace(
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)",
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tinit_card_ability_defaults(self)",
                 );
             }
             if patched.contains("local on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load") {
                 patched = patched.replace(
                     "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key].on_load",
-                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tif self.ability then\n\t\tself.ability.card_limit = self.ability.card_limit or 0\n\t\tself.ability.extra_slots_used = self.ability.extra_slots_used or 0\n\tend\n\tif self.edition and not self.edition.key then\n\t\tfor k, v in pairs(self.edition) do\n\t\t\tif v and G.P_CENTERS['e_' .. k] then\n\t\t\t\tself.edition.key = 'e_' .. k\n\t\t\t\tbreak\n\t\t\tend\n\t\tend\n\tend\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key] and G.P_CENTERS[self.edition.key].on_load",
+                    "function Card:load(cardTable, other_card)\n\tlocal ret = smods_card_load(self, cardTable, other_card)\n\tinit_card_ability_defaults(self)\n\tif self.edition and not self.edition.key then\n\t\tfor k, v in pairs(self.edition) do\n\t\t\tif v and G.P_CENTERS['e_' .. k] then\n\t\t\t\tself.edition.key = 'e_' .. k\n\t\t\t\tbreak\n\t\t\tend\n\t\tend\n\tend\n\tlocal on_edition_loaded = self.edition and self.edition.key and G.P_CENTERS[self.edition.key] and G.P_CENTERS[self.edition.key].on_load",
                 );
             }
             if patched.contains("self.ability.card_limit = self.ability.card_limit + (center.config.card_limit or 0)") {
@@ -176,6 +188,121 @@ fn ensure_steamodded_compatibility(mods_dir: &Path) {
                 );
             }
             let _ = fs::write(&overrides_lua, patched);
+        }
+    }
+    let perma_bonus_toml = smods_dir.join("lovely").join("perma_bonus.toml");
+    if perma_bonus_toml.exists() {
+        if let Ok(content) = fs::read_to_string(&perma_bonus_toml) {
+            let mut patched = content;
+            if patched.contains("bonus_x_chips = self.ability.perma_x_chips ~= 0 and (self.ability.perma_x_chips + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_x_chips = self.ability.perma_x_chips ~= 0 and (self.ability.perma_x_chips + 1) or nil,",
+                    "bonus_x_chips = (self.ability.perma_x_chips or 0) ~= 0 and ((self.ability.perma_x_chips or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_mult = self.ability.perma_mult ~= 0 and self.ability.perma_mult or nil,") {
+                patched = patched.replace(
+                    "bonus_mult = self.ability.perma_mult ~= 0 and self.ability.perma_mult or nil,",
+                    "bonus_mult = (self.ability.perma_mult or 0) ~= 0 and self.ability.perma_mult or nil,",
+                );
+            }
+            if patched.contains("bonus_x_mult = self.ability.perma_x_mult ~= 0 and (self.ability.perma_x_mult + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_x_mult = self.ability.perma_x_mult ~= 0 and (self.ability.perma_x_mult + 1) or nil,",
+                    "bonus_x_mult = (self.ability.perma_x_mult or 0) ~= 0 and ((self.ability.perma_x_mult or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_chips = self.ability.perma_h_chips ~= 0 and self.ability.perma_h_chips or nil,") {
+                patched = patched.replace(
+                    "bonus_h_chips = self.ability.perma_h_chips ~= 0 and self.ability.perma_h_chips or nil,",
+                    "bonus_h_chips = (self.ability.perma_h_chips or 0) ~= 0 and self.ability.perma_h_chips or nil,",
+                );
+            }
+            if patched.contains("bonus_h_x_chips = self.ability.perma_h_x_chips ~= 0 and (self.ability.perma_h_x_chips + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_x_chips = self.ability.perma_h_x_chips ~= 0 and (self.ability.perma_h_x_chips + 1) or nil,",
+                    "bonus_h_x_chips = (self.ability.perma_h_x_chips or 0) ~= 0 and ((self.ability.perma_h_x_chips or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_mult = self.ability.perma_h_mult ~= 0 and self.ability.perma_h_mult or nil,") {
+                patched = patched.replace(
+                    "bonus_h_mult = self.ability.perma_h_mult ~= 0 and self.ability.perma_h_mult or nil,",
+                    "bonus_h_mult = (self.ability.perma_h_mult or 0) ~= 0 and self.ability.perma_h_mult or nil,",
+                );
+            }
+            if patched.contains("bonus_h_x_mult = self.ability.perma_h_x_mult ~= 0 and (self.ability.perma_h_x_mult + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_x_mult = self.ability.perma_h_x_mult ~= 0 and (self.ability.perma_h_x_mult + 1) or nil,",
+                    "bonus_h_x_mult = (self.ability.perma_h_x_mult or 0) ~= 0 and ((self.ability.perma_h_x_mult or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_p_dollars = self.ability.perma_p_dollars ~= 0 and self.ability.perma_p_dollars or nil,") {
+                patched = patched.replace(
+                    "bonus_p_dollars = self.ability.perma_p_dollars ~= 0 and self.ability.perma_p_dollars or nil,",
+                    "bonus_p_dollars = (self.ability.perma_p_dollars or 0) ~= 0 and self.ability.perma_p_dollars or nil,",
+                );
+            }
+            if patched.contains("bonus_h_dollars = self.ability.perma_h_dollars ~= 0 and self.ability.perma_h_dollars or nil,") {
+                patched = patched.replace(
+                    "bonus_h_dollars = self.ability.perma_h_dollars ~= 0 and self.ability.perma_h_dollars or nil,",
+                    "bonus_h_dollars = (self.ability.perma_h_dollars or 0) ~= 0 and self.ability.perma_h_dollars or nil,",
+                );
+            }
+            if patched.contains("bonus_score = self.ability.perma_score ~= 0 and (self.ability.perma_score) or nil,") {
+                patched = patched.replace(
+                    "bonus_score = self.ability.perma_score ~= 0 and (self.ability.perma_score) or nil,",
+                    "bonus_score = (self.ability.perma_score or 0) ~= 0 and (self.ability.perma_score) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_score = self.ability.perma_h_score ~= 0 and (self.ability.perma_h_score) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_score = self.ability.perma_h_score ~= 0 and (self.ability.perma_h_score) or nil,",
+                    "bonus_h_score = (self.ability.perma_h_score or 0) ~= 0 and (self.ability.perma_h_score) or nil,",
+                );
+            }
+            if patched.contains("bonus_x_score = self.ability.perma_x_score ~= 0 and (self.ability.perma_x_score + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_x_score = self.ability.perma_x_score ~= 0 and (self.ability.perma_x_score + 1) or nil,",
+                    "bonus_x_score = (self.ability.perma_x_score or 0) ~= 0 and ((self.ability.perma_x_score or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_x_score = self.ability.perma_h_x_score ~= 0 and (self.ability.perma_h_x_score + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_x_score = self.ability.perma_h_x_score ~= 0 and (self.ability.perma_h_x_score + 1) or nil,",
+                    "bonus_h_x_score = (self.ability.perma_h_x_score or 0) ~= 0 and ((self.ability.perma_h_x_score or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_blind_size = self.ability.perma_blind_size ~= 0 and (self.ability.perma_blind_size) or nil,") {
+                patched = patched.replace(
+                    "bonus_blind_size = self.ability.perma_blind_size ~= 0 and (self.ability.perma_blind_size) or nil,",
+                    "bonus_blind_size = (self.ability.perma_blind_size or 0) ~= 0 and (self.ability.perma_blind_size) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_blind_size = self.ability.perma_h_blind_size ~= 0 and (self.ability.perma_h_blind_size) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_blind_size = self.ability.perma_h_blind_size ~= 0 and (self.ability.perma_h_blind_size) or nil,",
+                    "bonus_h_blind_size = (self.ability.perma_h_blind_size or 0) ~= 0 and (self.ability.perma_h_blind_size) or nil,",
+                );
+            }
+            if patched.contains("bonus_x_blind_size = self.ability.perma_x_blind_size ~= 0 and (self.ability.perma_x_blind_size + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_x_blind_size = self.ability.perma_x_blind_size ~= 0 and (self.ability.perma_x_blind_size + 1) or nil,",
+                    "bonus_x_blind_size = (self.ability.perma_x_blind_size or 0) ~= 0 and ((self.ability.perma_x_blind_size or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_h_x_blind_size = self.ability.perma_h_x_blind_size ~= 0 and (self.ability.perma_h_x_blind_size + 1) or nil,") {
+                patched = patched.replace(
+                    "bonus_h_x_blind_size = self.ability.perma_h_x_blind_size ~= 0 and (self.ability.perma_h_x_blind_size + 1) or nil,",
+                    "bonus_h_x_blind_size = (self.ability.perma_h_x_blind_size or 0) ~= 0 and ((self.ability.perma_h_x_blind_size or 0) + 1) or nil,",
+                );
+            }
+            if patched.contains("bonus_repetitions = self.ability.perma_repetitions ~= 0 and self.ability.perma_repetitions or nil,") {
+                patched = patched.replace(
+                    "bonus_repetitions = self.ability.perma_repetitions ~= 0 and self.ability.perma_repetitions or nil,",
+                    "bonus_repetitions = (self.ability.perma_repetitions or 0) ~= 0 and self.ability.perma_repetitions or nil,",
+                );
+            }
+            let _ = fs::write(&perma_bonus_toml, patched);
         }
     }
     let hand_limit_toml = smods_dir.join("lovely").join("hand_limit.toml");
