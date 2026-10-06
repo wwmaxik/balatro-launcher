@@ -2,9 +2,10 @@ use iced::widget::{
     button, column, container, horizontal_space, row, scrollable, svg, text, text_input, toggler,
 };
 use iced::{
-    Alignment, Border, Color, Element, Length, Shadow, Task, Vector,
+    time, Alignment, Border, Color, Element, Length, Shadow, Subscription, Task, Vector,
 };
 use std::path::PathBuf;
+use std::time::Duration;
 
 use crate::config::{load_config, save_config, AppConfig};
 use crate::installer::download_and_install_lovely;
@@ -26,7 +27,6 @@ pub const COLOR_WINDOW_BG: Color = Color::from_rgb(0.094, 0.098, 0.106); // #181
 pub const COLOR_SIDEBAR_BG: Color = Color::from_rgb(0.118, 0.122, 0.133); // #1e1f22 (Sidebar Material)
 pub const COLOR_CARD_BG: Color = Color::from_rgb(0.145, 0.153, 0.165); // #25272a (Card Surface)
 pub const COLOR_CARD_BORDER: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.08); // Subtle separator
-pub const COLOR_CARD_ACTIVE_BORDER: Color = Color::from_rgba(0.18, 0.54, 0.96, 0.5); // Apple Blue accent border
 
 // Typography & Labels:
 pub const COLOR_LABEL_PRIMARY: Color = Color::from_rgb(0.96, 0.96, 0.97); // 100% Label
@@ -47,6 +47,7 @@ pub enum NavigationTab {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    Tick,
     SelectTab(NavigationTab),
     RefreshData,
     ToggleMod(usize),
@@ -69,6 +70,7 @@ pub struct LauncherApp {
     pub lovely_lib: Option<PathBuf>,
     pub status_message: String,
     pub is_installing_lovely: bool,
+    pub animation_phase: f32, // Smooth pulsing animation counter
 }
 
 impl LauncherApp {
@@ -108,6 +110,7 @@ impl LauncherApp {
                 lovely_lib,
                 status_message,
                 is_installing_lovely: false,
+                animation_phase: 0.0,
             },
             Task::none(),
         )
@@ -117,8 +120,17 @@ impl LauncherApp {
         "Balatro Launcher".to_string()
     }
 
+    pub fn subscription(&self) -> Subscription<Message> {
+        // 60 FPS smooth animation ticker for subtle breathing glows
+        time::every(Duration::from_millis(16)).map(|_| Message::Tick)
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::Tick => {
+                self.animation_phase = (self.animation_phase + 0.04) % (std::f32::consts::PI * 2.0);
+                Task::none()
+            }
             Message::SelectTab(tab) => {
                 self.current_tab = tab;
                 Task::none()
@@ -239,6 +251,9 @@ impl LauncherApp {
     }
 
     pub fn view(&self) -> Element<'_, Message> {
+        // Subtle Apple-style breathing oscillation for active accent elements
+        let pulse = (self.animation_phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+
         // SIDEBAR HEADER
         let brand_icon = svg(svg::Handle::from_memory(ICON_CARD_SVG))
             .width(20)
@@ -373,13 +388,13 @@ impl LauncherApp {
             .spacing(8)
             .align_y(Alignment::Center),
         )
-        .padding([8, 12])
+        .padding([6, 12])
         .width(Length::Fill)
         .style(|_, _| button::Style {
             background: Some(iced::Background::Color(Color::from_rgba(1.0, 1.0, 1.0, 0.05))),
             text_color: COLOR_LABEL_SECONDARY,
             border: Border {
-                radius: 8.0.into(),
+                radius: 6.0.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -431,11 +446,23 @@ impl LauncherApp {
             ..Default::default()
         });
 
+        // Glowing dot animation on Lovely pill
+        let lovely_dot_color = if self.lovely_lib.is_some() {
+            Color::from_rgba(
+                0.18 + 0.1 * pulse,
+                0.54 + 0.1 * pulse,
+                0.96,
+                0.7 + 0.3 * pulse,
+            )
+        } else {
+            COLOR_LABEL_TERTIARY
+        };
+
         let lovely_pill = container(
             row![
                 text(if self.lovely_lib.is_some() { "●" } else { "○" })
                     .size(9)
-                    .color(if self.lovely_lib.is_some() { ACCENT_APPLE_BLUE } else { COLOR_LABEL_TERTIARY }),
+                    .color(lovely_dot_color),
                 text(if self.lovely_lib.is_some() { "Lovely Активен" } else { "Lovely выкл" })
                     .size(12)
                     .color(COLOR_LABEL_SECONDARY)
@@ -591,6 +618,18 @@ impl LauncherApp {
                             .on_toggle(move |_| Message::ToggleMod(idx))
                             .size(18);
 
+                        // Subtle breathing active border glow
+                        let border_color = if is_on {
+                            Color::from_rgba(
+                                0.18,
+                                0.54,
+                                0.96,
+                                0.35 + 0.25 * pulse,
+                            )
+                        } else {
+                            COLOR_CARD_BORDER
+                        };
+
                         let card = container(
                             row![info_col, horizontal_space(), toggle]
                                 .align_y(Alignment::Center)
@@ -599,11 +638,7 @@ impl LauncherApp {
                         .style(move |_| container::Style {
                             background: Some(iced::Background::Color(COLOR_CARD_BG)),
                             border: Border {
-                                color: if is_on {
-                                    COLOR_CARD_ACTIVE_BORDER
-                                } else {
-                                    COLOR_CARD_BORDER
-                                },
+                                color: border_color,
                                 width: 1.0,
                                 radius: 10.0.into(),
                             },
@@ -731,6 +766,8 @@ impl LauncherApp {
             .size(18)
             .on_toggle(Message::SetModdedMode);
 
+        // Animated breathing shadow on the primary Launch button
+        let button_glow_alpha = 0.25 + 0.15 * pulse;
         let launch_btn = button(
             text(if self.config.modded_mode {
                 "ИГРАТЬ (MODDED)"
@@ -740,7 +777,7 @@ impl LauncherApp {
             .size(14),
         )
         .padding([10, 28])
-        .style(|_, _| button::Style {
+        .style(move |_, _| button::Style {
             background: Some(iced::Background::Color(ACCENT_BALATRO_RED)),
             text_color: Color::WHITE,
             border: Border {
@@ -748,9 +785,9 @@ impl LauncherApp {
                 ..Default::default()
             },
             shadow: Shadow {
-                color: Color::from_rgba(0.92, 0.28, 0.25, 0.35),
+                color: Color::from_rgba(0.92, 0.28, 0.25, button_glow_alpha),
                 offset: Vector::new(0.0, 2.0),
-                blur_radius: 6.0,
+                blur_radius: 6.0 + 4.0 * pulse,
             },
             ..Default::default()
         })

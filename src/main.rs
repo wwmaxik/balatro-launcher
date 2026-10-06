@@ -13,6 +13,7 @@ fn main() -> iced::Result {
         LauncherApp::update,
         LauncherApp::view,
     )
+    .subscription(LauncherApp::subscription)
     .window_size((850.0, 620.0))
     .theme(|_| iced::Theme::Dark)
     .run_with(LauncherApp::new)
