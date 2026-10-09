@@ -1,5 +1,18 @@
 [
   {
+    "id": "wwmaxik@quantumopt",
+    "name": "QuantumOpt",
+    "author": "wwmaxik",
+    "category": "Quality of Life, Technical",
+    "description": "High-performance FPS & Endless Optimizer: eliminates the fatal nuGC 1 FPS loop, throttles occluded card shaders and transforms, accelerates DynaText and scoring.",
+    "download_url": "https://github.com/wwmaxik/QuantumOpt/archive/refs/heads/main.zip",
+    "folder_name": "QuantumOpt",
+    "version": "1.3.0",
+    "requires_steamodded": true,
+    "requires_talisman": false,
+    "badge": "Optimization"
+  },
+  {
     "id": "1988koi@silly-jokers",
     "name": "Silly Jokers",
     "author": "1988Koi",
