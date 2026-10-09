@@ -620,6 +620,21 @@ fn walk_and_patch_nativefs(dir: &Path) {
                     if needs_patch {
                         let _ = fs::write(&path, COMPAT_NATIVEFS);
                     }
+                } else if file_name.eq_ignore_ascii_case("talisman.lua") {
+                    if let Ok(content) = fs::read_to_string(&path) {
+                        if content.contains("ffi.load(\"love\")") || content.contains("ffi.load('love')") {
+                            let patched = content
+                                .replace(
+                                    "local tinymount = (pcall(function() return ffi.C.PHYSFS_mount end) and ffi.C or ffi.load(\"love\")).PHYSFS_mount",
+                                    "local function tinymount(dir, mountPoint, appendToPath)\n    local append = (appendToPath == 1 or appendToPath == true)\n    if love and love.filesystem and love.filesystem.mount then\n        if love.filesystem.mount(dir, mountPoint, append) then return 1 end\n        local rel_dir = dir\n        if love.filesystem.getSaveDirectory and dir:find(love.filesystem.getSaveDirectory(), 1, true) then\n            rel_dir = dir:sub(#love.filesystem.getSaveDirectory() + 2)\n        end\n        if rel_dir ~= dir and love.filesystem.mount(rel_dir, mountPoint, append) then return 1 end\n        local mods_idx = dir:find(\"Mods/\") or dir:find(\"Mods\\\\\")\n        if mods_idx then\n            local from_mods = dir:sub(mods_idx)\n            if love.filesystem.mount(from_mods, mountPoint, append) then return 1 end\n        end\n    end\n    local ffi = require(\"ffi\")\n    pcall(function() ffi.cdef[[int PHYSFS_mount(const char* dir, const char* mountPoint, int appendToPath);]] end)\n    local fn = nil\n    pcall(function() fn = ffi.C.PHYSFS_mount end)\n    if fn then\n        local ok, res = pcall(fn, dir, mountPoint, append and 1 or 0)\n        if ok and res ~= 0 then return res end\n    end\n    if package and package.path then\n        package.path = package.path .. \";\" .. dir .. \"/?.lua;\" .. dir .. \"/?/init.lua\"\n        return 1\n    end\n    return 0\nend",
+                                )
+                                .replace(
+                                    "local tinymount = (pcall(function() return ffi.C.PHYSFS_mount end) and ffi.C or ffi.load('love')).PHYSFS_mount",
+                                    "local function tinymount(dir, mountPoint, appendToPath)\n    local append = (appendToPath == 1 or appendToPath == true)\n    if love and love.filesystem and love.filesystem.mount then\n        if love.filesystem.mount(dir, mountPoint, append) then return 1 end\n        local rel_dir = dir\n        if love.filesystem.getSaveDirectory and dir:find(love.filesystem.getSaveDirectory(), 1, true) then\n            rel_dir = dir:sub(#love.filesystem.getSaveDirectory() + 2)\n        end\n        if rel_dir ~= dir and love.filesystem.mount(rel_dir, mountPoint, append) then return 1 end\n        local mods_idx = dir:find(\"Mods/\") or dir:find(\"Mods\\\\\")\n        if mods_idx then\n            local from_mods = dir:sub(mods_idx)\n            if love.filesystem.mount(from_mods, mountPoint, append) then return 1 end\n        end\n    end\n    local ffi = require(\"ffi\")\n    pcall(function() ffi.cdef[[int PHYSFS_mount(const char* dir, const char* mountPoint, int appendToPath);]] end)\n    local fn = nil\n    pcall(function() fn = ffi.C.PHYSFS_mount end)\n    if fn then\n        local ok, res = pcall(fn, dir, mountPoint, append and 1 or 0)\n        if ok and res ~= 0 then return res end\n    end\n    if package and package.path then\n        package.path = package.path .. \";\" .. dir .. \"/?.lua;\" .. dir .. \"/?/init.lua\"\n        return 1\n    end\n    return 0\nend",
+                                );
+                            let _ = fs::write(&path, patched);
+                        }
+                    }
                 }
             }
         }
