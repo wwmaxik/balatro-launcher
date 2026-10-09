@@ -7,10 +7,10 @@
     "description": "High-performance Rust-native FPS & Endless Optimizer: libquantum_core.so offloader for card kinematics & Talisman/OmegaNum BigNum arithmetic, cursor collision cache, nuGC 1 FPS loop fix.",
     "download_url": "https://github.com/wwmaxik/QuantumOpt/archive/refs/heads/main.zip",
     "folder_name": "QuantumOpt",
-    "version": "1.4.0",
+    "version": "1.4.0-beta",
     "requires_steamodded": true,
     "requires_talisman": false,
-    "badge": "Optimization"
+    "badge": "Бета"
   },
   {
     "id": "1988koi@silly-jokers",

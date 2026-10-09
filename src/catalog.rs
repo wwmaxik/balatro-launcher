@@ -85,10 +85,10 @@ pub fn get_featured_mods() -> Vec<CatalogMod> {
             description: "Высокопроизводительный оптимизатор FPS на Rust (libquantum_core.so): ускоряет кинематику сотен карт и BigNum (OmegaNum), устраняет смертельный цикл nuGC и спам коллизий.".to_string(),
             download_url: "https://github.com/wwmaxik/QuantumOpt/archive/refs/heads/main.zip".to_string(),
             folder_name: "QuantumOpt".to_string(),
-            version: "v1.4.0".to_string(),
+            version: "v1.4.0-beta".to_string(),
             requires_steamodded: true,
             requires_talisman: false,
-            badge: Some("Оптимизация".to_string()),
+            badge: Some("Бета".to_string()),
         },
         CatalogMod {
             id: "talisman".to_string(),
